@@ -3953,15 +3953,17 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   }
 
   function showCloudNotice(message, type='info'){
+    // v38: 반복적인 로드/동기화 알림은 화면에 띄우지 않고 콘솔에만 기록합니다.
+    // 오류만 아주 조용하게 우측 하단에 표시합니다.
     console.log('[FILM HK v36]', message);
+    if(type !== 'error') return;
     let el = document.getElementById('filmhkCloudStatus');
     if(!el){
       el = document.createElement('div');
       el.id = 'filmhkCloudStatus';
-      el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 13px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #374151;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';
+      el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99999;padding:10px 13px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #ef4444;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';
       document.body.appendChild(el);
     }
-    el.style.borderColor = type === 'error' ? '#ef4444' : type === 'success' ? '#22c55e' : '#374151';
     el.textContent = message;
     clearTimeout(showCloudNotice._t);
     showCloudNotice._t = setTimeout(()=>{ if(el) el.remove(); }, 4500);
@@ -4174,172 +4176,215 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
 
 
-<!-- FILM HK v37: Cross-device sync stabilizer / equipment & booking immediate save + polling reload -->
+
+
+<!-- FILM HK v38: Event-based Supabase sync / stale-overwrite guard / quiet mode -->
 <script>
 (function(){
   const CLOUD_STATE_ID = 'filmhk-main-state-v1';
-  let lastSeenUpdatedAt = null;
-  let syncing = false;
-  let pollTimer = null;
-  let pendingLocalSave = false;
+  let lastKnownUpdatedAt = null;
+  let saveTimer = null;
+  let saving = false;
+  let loading = false;
+  let realtimeChannel = null;
 
-  function client(){ return window.filmhkSupabase || null; }
-
-  function activePanelId(){ return document.querySelector('.panel.active')?.id || 'dashboard'; }
-
-  function refreshAllScreens(){
-    try{
-      if(typeof renderDashboard === 'function') renderDashboard();
-      if(typeof renderEquipment === 'function') renderEquipment();
-      if(typeof renderBookings === 'function') renderBookings();
-      if(typeof renderCalendar === 'function') renderCalendar();
-      if(typeof renderCustomers === 'function') renderCustomers();
-      if(typeof renderQuotes === 'function') renderQuotes();
-      if(typeof renderSettings === 'function' && activePanelId()==='settings') renderSettings();
-      if(typeof renderAll === 'function') renderAll(activePanelId());
-    }catch(e){ console.warn('[FILM HK v37] 화면 전체 갱신 경고:', e); }
+  function c(){ return window.filmhkSupabase || null; }
+  async function user(){
+    const client = c(); if(!client) return null;
+    const { data, error } = await client.auth.getSession();
+    if(error) return null;
+    return data?.session?.user || null;
   }
+  function clone(obj){ return JSON.parse(JSON.stringify(obj || {})); }
+  function byIdMerge(remoteArr, localArr){
+    const map = new Map();
+    (remoteArr || []).forEach(x=>{ if(x && x.id) map.set(x.id, clone(x)); });
+    (localArr || []).forEach(x=>{ if(x && x.id) map.set(x.id, clone(x)); });
+    return Array.from(map.values());
+  }
+  function union(a,b){ return Array.from(new Set([...(a||[]), ...(b||[])])); }
+  function mergeState(remote, local){
+    const r = clone(remote || {});
+    const l = clone(local || {});
+    const merged = Object.assign({}, r, l);
 
-  function toast(msg, type='info'){
-    console.log('[FILM HK v37]', msg);
+    // 추가/수정이 동시에 일어났을 때 서로의 항목이 날아가지 않도록 id 기준으로 합칩니다.
+    merged.equipment = byIdMerge(r.equipment, l.equipment);
+    merged.customers = byIdMerge(r.customers, l.customers);
+    merged.bookings = byIdMerge(r.bookings, l.bookings);
+    merged.categories = union(r.categories, l.categories);
+
+    merged.settings = Object.assign({}, r.settings || {}, l.settings || {});
+    merged.categoryMeta = Object.assign({}, r.categoryMeta || {}, l.categoryMeta || {});
+    merged.setComponents = Object.assign({}, r.setComponents || {}, l.setComponents || {});
+    return (typeof migrate === 'function') ? migrate(merged) : merged;
+  }
+  function refresh(){
+    try{
+      const active = document.querySelector('.panel.active')?.id || 'dashboard';
+      if(typeof renderAll === 'function') renderAll(active);
+      if(typeof updateSelectedCustomer === 'function') updateSelectedCustomer();
+      if(typeof renderSelectedEquipments === 'function') renderSelectedEquipments();
+      if(typeof updateBookingPreview === 'function') updateBookingPreview();
+    }catch(e){ console.warn('[FILM HK v38] 화면 갱신 경고:', e); }
+  }
+  function quiet(msg, data){ console.log('[FILM HK v38]', msg, data || ''); }
+  function smallError(msg){
+    console.error('[FILM HK v38]', msg);
     let el = document.getElementById('filmhkSyncStatus');
     if(!el){
       el = document.createElement('div');
       el.id = 'filmhkSyncStatus';
-      el.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:99999;padding:9px 12px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #374151;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';
+      el.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:99999;padding:9px 12px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #ef4444;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';
       document.body.appendChild(el);
     }
-    el.style.borderColor = type === 'error' ? '#ef4444' : type === 'success' ? '#22c55e' : '#374151';
     el.textContent = msg;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(()=>{ if(el) el.remove(); }, 3500);
+    clearTimeout(smallError._t);
+    smallError._t = setTimeout(()=>{ if(el) el.remove(); }, 4500);
   }
-
-  async function currentUser(){
-    const c = client(); if(!c) return null;
-    const { data, error } = await c.auth.getSession();
-    if(error) return null;
-    return data?.session?.user || null;
-  }
-
-  async function getRemoteMeta(){
-    const c = client(); if(!c) return null;
-    const user = await currentUser(); if(!user) return null;
-    const { data, error } = await c
+  async function fetchRemote(){
+    const client = c(); if(!client) return null;
+    const u = await user(); if(!u) return null;
+    const { data, error } = await client
       .from('app_state')
-      .select('updated_at')
+      .select('data, updated_at, updated_by')
       .eq('id', CLOUD_STATE_ID)
       .maybeSingle();
-    if(error){ console.warn('[FILM HK v37] 원격 메타 조회 실패:', error); return null; }
-    return data?.updated_at || null;
+    if(error) throw error;
+    return data || null;
   }
-
-  async function forceSave(reason='v37 immediate save'){
-    pendingLocalSave = true;
+  async function loadRemote(reason='remote change'){
+    if(loading || saving) return null;
+    loading = true;
     try{
-      if(typeof window.filmhkSaveCloudState === 'function'){
-        await window.filmhkSaveCloudState(reason);
-        const meta = await getRemoteMeta();
-        if(meta) lastSeenUpdatedAt = meta;
-        refreshAllScreens();
-        toast('Supabase 저장 완료', 'success');
+      const remote = await fetchRemote();
+      if(remote && remote.data){
+        state = (typeof migrate === 'function') ? migrate(remote.data) : remote.data;
+        lastKnownUpdatedAt = remote.updated_at;
+        try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+        refresh();
+        quiet('원격 데이터 반영', reason + ' / ' + lastKnownUpdatedAt);
+        return state;
       }
     }catch(e){
-      console.error('[FILM HK v37] 즉시 저장 실패:', e);
-      toast('Supabase 즉시 저장 실패. 콘솔 확인', 'error');
-    }finally{
-      pendingLocalSave = false;
-    }
+      smallError('Supabase 데이터 로드 실패. 콘솔 확인');
+      console.error(e);
+    }finally{ loading = false; }
+    return null;
   }
+  async function safeSave(reason='auto'){
+    if(loading) return;
+    const client = c(); if(!client) return;
+    const u = await user(); if(!u) return;
+    saving = true;
+    try{
+      const localState = (typeof migrate === 'function') ? migrate(clone(state || {})) : clone(state || {});
+      const remote = await fetchRemote();
+      let stateToSave = localState;
 
-  async function reloadIfRemoteChanged(reason='poll'){
-    if(syncing || pendingLocalSave) return false;
-    const c = client(); if(!c) return false;
-    const user = await currentUser(); if(!user) return false;
-    const remoteUpdatedAt = await getRemoteMeta();
-    if(!remoteUpdatedAt) return false;
-
-    if(!lastSeenUpdatedAt){
-      lastSeenUpdatedAt = remoteUpdatedAt;
-      return false;
-    }
-
-    if(new Date(remoteUpdatedAt).getTime() > new Date(lastSeenUpdatedAt).getTime()){
-      syncing = true;
-      try{
-        if(typeof window.filmhkForceCloudLoad === 'function'){
-          await window.filmhkForceCloudLoad();
-          lastSeenUpdatedAt = remoteUpdatedAt;
-          refreshAllScreens();
-          toast('다른 기기 변경사항 반영 완료', 'success');
-          return true;
-        }
-      }catch(e){
-        console.error('[FILM HK v37] 원격 변경사항 로드 실패:', e);
-      }finally{
-        syncing = false;
+      // 다른 기기에서 먼저 저장된 최신 데이터가 있으면, 기존 데이터를 덮어쓰지 않고 병합합니다.
+      if(remote && remote.data && lastKnownUpdatedAt && new Date(remote.updated_at).getTime() > new Date(lastKnownUpdatedAt).getTime()){
+        stateToSave = mergeState(remote.data, localState);
+        state = stateToSave;
+        refresh();
+        quiet('원격 변경 감지 후 병합 저장', reason);
+      }else if(remote && remote.data && !lastKnownUpdatedAt){
+        // 첫 저장 직전 기준점이 없으면 원격과 병합해서 안전하게 저장합니다.
+        stateToSave = mergeState(remote.data, localState);
+        state = stateToSave;
       }
-    }
-    return false;
+
+      const payload = {
+        id: CLOUD_STATE_ID,
+        data: stateToSave,
+        updated_at: new Date().toISOString(),
+        updated_by: u.id
+      };
+      const { data, error } = await client
+        .from('app_state')
+        .upsert(payload, { onConflict: 'id' })
+        .select('updated_at')
+        .single();
+      if(error) throw error;
+      lastKnownUpdatedAt = data?.updated_at || payload.updated_at;
+      try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+      quiet('저장 완료', reason + ' / ' + lastKnownUpdatedAt);
+    }catch(e){
+      smallError('Supabase 저장 실패. 콘솔 확인');
+      console.error(e);
+    }finally{ saving = false; }
+  }
+  function scheduleSave(reason='auto'){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>safeSave(reason), 350);
   }
 
-  function wrapFunction(name, reason){
+  // v38 핵심: 모든 저장은 localStorage가 아니라 Supabase 안전 저장으로만 보냅니다.
+  window.save = save = function(){ scheduleSave('save()'); };
+  window.filmhkSaveCloudState = safeSave;
+  window.filmhkForceCloudLoad = function(){ return loadRemote('manual force'); };
+  window.filmhkSyncNow = function(){ return loadRemote('manual sync'); };
+  window.filmhkSaveNow = function(){ return safeSave('manual save'); };
+  window.filmhkCloudStatus = async function(){
+    const remote = await fetchRemote().catch(e=>({error:e}));
+    const result = { lastKnownUpdatedAt, saving, loading, remote, state };
+    console.log('[FILM HK v38] Cloud status:', result);
+    return result;
+  };
+
+  function wrap(name, reason){
     const original = window[name];
-    if(typeof original !== 'function' || original.__filmhkV37Wrapped) return;
+    if(typeof original !== 'function' || original.__filmhkV38Wrapped) return;
     const wrapped = function(){
+      const before = JSON.stringify(state || {});
       const result = original.apply(this, arguments);
-      // 원래 함수가 alert/validation으로 중간 종료될 수 있으므로, 아주 짧게 지연 후 현재 state를 즉시 저장합니다.
-      setTimeout(()=>forceSave(reason || name), 250);
+      setTimeout(()=>{
+        const after = JSON.stringify(state || {});
+        if(before !== after) safeSave(reason || name);
+      }, 220);
       return result;
     };
-    wrapped.__filmhkV37Wrapped = true;
+    wrapped.__filmhkV38Wrapped = true;
     window[name] = wrapped;
   }
-
-  function installImmediateSaveHooks(){
-    [
-      ['saveEquipment','장비 저장'],
-      ['deleteEquipment','장비 삭제'],
-      ['saveBooking','예약 저장'],
-      ['deleteBooking','예약 삭제'],
-      ['markReturned','반납 처리'],
-      ['saveCustomer','고객 저장'],
-      ['deleteCustomer','고객 삭제'],
-      ['saveSettings','설정 저장'],
-      ['addDiscountRule','할인구간 저장'],
-      ['resetData','데이터 초기화']
-    ].forEach(([name, reason])=>wrapFunction(name, reason));
+  function installHooks(){
+    ['saveEquipment','deleteEquipment','saveBooking','deleteBooking','markReturned','saveCustomer','deleteCustomer','saveSettings','addDiscountRule','resetData'].forEach(n=>wrap(n,n));
   }
-
-  function startPolling(){
-    if(pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(()=>reloadIfRemoteChanged('poll'), 3000);
-    document.addEventListener('visibilitychange', ()=>{
-      if(!document.hidden) reloadIfRemoteChanged('visible');
-    });
-    window.addEventListener('focus', ()=>reloadIfRemoteChanged('focus'));
+  async function startRealtime(){
+    const client = c(); if(!client) return false;
+    const u = await user(); if(!u) return false;
+    if(realtimeChannel){ try{ client.removeChannel(realtimeChannel); }catch(e){} }
+    realtimeChannel = client
+      .channel('filmhk-app-state-v38')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'app_state',
+        filter: 'id=eq.' + CLOUD_STATE_ID
+      }, async (payload)=>{
+        const incomingAt = payload?.new?.updated_at;
+        if(!incomingAt) return;
+        if(lastKnownUpdatedAt && new Date(incomingAt).getTime() <= new Date(lastKnownUpdatedAt).getTime()) return;
+        if(saving) return;
+        await loadRemote('realtime');
+      })
+      .subscribe((status)=>{
+        quiet('Realtime 상태', status);
+      });
+    return true;
   }
-
   async function boot(){
-    installImmediateSaveHooks();
+    installHooks();
     setTimeout(async ()=>{
-      try{
-        const meta = await getRemoteMeta();
-        if(meta) lastSeenUpdatedAt = meta;
-        startPolling();
-        console.log('[FILM HK v37] 동기화 안정화 시작:', lastSeenUpdatedAt);
-      }catch(e){ console.warn('[FILM HK v37] 부팅 경고:', e); }
-    }, 1600);
+      const remote = await fetchRemote().catch(e=>null);
+      if(remote?.updated_at) lastKnownUpdatedAt = remote.updated_at;
+      await startRealtime();
+      // Realtime 누락 대비: 사용자가 다시 화면을 볼 때만 최신 여부 확인. 3초 폴링은 제거.
+      document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadRemote('visible'); });
+      window.addEventListener('focus', ()=>loadRemote('focus'));
+      quiet('v38 이벤트 기반 동기화 시작', lastKnownUpdatedAt);
+    }, 1200);
   }
-
-  window.filmhkSyncNow = async function(){
-    await reloadIfRemoteChanged('manual');
-    refreshAllScreens();
-    return { lastSeenUpdatedAt };
-  };
-  window.filmhkSaveNow = function(){ return forceSave('manual save'); };
-  window.filmhkRefreshAll = refreshAllScreens;
-
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
