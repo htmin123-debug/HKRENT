@@ -3698,4 +3698,51 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 })();
 </script>
 
+
+<!-- Supabase 연결: FILM HK RENTAL DATA -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  // 공개 가능한 Publishable Key입니다. Secret key / service_role key는 절대 HTML에 넣지 마세요.
+  window.FILMHK_SUPABASE_URL = 'https://bnyjrobeiiqgavhgiimx.supabase.co';
+  window.FILMHK_SUPABASE_KEY = 'sb_publishable_CGDh6TxaWKvUjx4inv2LmA_BK4cWR_W';
+
+  if (!window.supabase || !window.supabase.createClient) {
+    console.error('[FILM HK] Supabase SDK 로드 실패');
+    return;
+  }
+
+  window.filmhkSupabase = window.supabase.createClient(
+    window.FILMHK_SUPABASE_URL,
+    window.FILMHK_SUPABASE_KEY
+  );
+
+  console.log('[FILM HK] Supabase 연결 준비 완료');
+
+  // 연결 확인용 함수: 브라우저 콘솔에서 filmhkTestSupabase() 입력하면 equipment 테이블 조회를 테스트합니다.
+  window.filmhkTestSupabase = async function(){
+    try {
+      const { data, error } = await window.filmhkSupabase
+        .from('equipment')
+        .select('*')
+        .limit(5);
+
+      if (error) {
+        console.error('[FILM HK] Supabase 조회 오류:', error);
+        alert('Supabase 연결은 되었지만 조회 오류가 있습니다. 콘솔을 확인하세요.');
+        return { data:null, error };
+      }
+
+      console.log('[FILM HK] Supabase equipment 테스트 성공:', data);
+      alert('Supabase 연결 성공! 콘솔에서 조회 결과를 확인하세요.');
+      return { data, error:null };
+    } catch (err) {
+      console.error('[FILM HK] Supabase 테스트 실패:', err);
+      alert('Supabase 테스트 실패. 콘솔을 확인하세요.');
+      return { data:null, error:err };
+    }
+  };
+})();
+</script>
+
 </body></html>
