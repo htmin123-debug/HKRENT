@@ -4224,4 +4224,1041 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 })();
 </script>
 
+
+
+<!-- FILM HK RENTAL v55: booking sort/select delete + set condition drag order + quote copy totals + quote component note guard -->
+<script>
+(function(){
+  'use strict';
+  const VERSION='v55';
+  const $=(id)=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=(v)=> (typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const M=(n)=> (typeof fmt==='function'?fmt(n||0):((Number(n)||0).toLocaleString('ko-KR')+'원'));
+  const D=(d,t)=>{try{return typeof dt==='function'?dt(d,t):new Date(String(d||'')+'T'+String(t||'00:00')+':00')}catch(e){return new Date(0)}};
+  function updateVersion(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  function bookingNoOf(b){try{ if(typeof ensureBookingNo==='function') return ensureBookingNo(b); if(typeof bookingNo==='function') return bookingNo(b); }catch(e){} return b.bookingNo||b.no||b.id||'';}
+  function customerNameOf(id){try{return typeof customerName==='function'?customerName(id):((S().customers||[]).find(c=>c.id===id)?.name||'미지정')}catch(e){return '미지정'}}
+  function equipNameOf(id){try{return typeof equipmentName==='function'?equipmentName(id):((S().equipment||[]).find(e=>e.id===id)?.name||'삭제된 장비')}catch(e){return '삭제된 장비'}}
+  function statusOf(b){try{return typeof effectiveBookingStatus==='function'?effectiveBookingStatus(b):b.status}catch(e){return b.status||''}}
+  function priceOf(b){try{return typeof priceBreakdown==='function'?priceBreakdown(b):{total:0,vat:0,base:0,days:1,contPct:0,cont:0}}catch(e){return {total:0,vat:0,base:0,days:1,contPct:0,cont:0}}}
+  function badgeOf(s){try{return typeof badge==='function'?badge(s):'<span class="badge gray">'+H(s)+'</span>'}catch(e){return '<span class="badge gray">'+H(s)+'</span>'}}
+  function openBooking(id){ if(typeof openBookingDetail==='function') openBookingDetail(id); else if(typeof openBookingModal==='function') openBookingModal(id); }
+  function openCustomer(id){ if(typeof showCustomerHistory==='function') showCustomerHistory(id); else if(typeof openCustomerHistory==='function') openCustomerHistory(id); else if(typeof openCustomerModal==='function') openCustomerModal(id); }
+  function currentSort(){return window.__fhkBookingSort||'bookingNo'}
+  function setSort(v){window.__fhkBookingSort=v; renderBookings();}
+  window.filmhkSetBookingSort=setSort;
+  function inDateRange(b){
+    const range=$('bkRangeFilter')?.value||'all';
+    const ym=$('bkMonthFilter')?.value||new Date().toISOString().slice(0,7);
+    const eff=statusOf(b);
+    if(range==='active') return !['returned','cancelled'].includes(eff);
+    if(range==='returned') return eff==='returned';
+    if(range==='month'){
+      const [y,m]=ym.split('-').map(Number); if(!y||!m) return true;
+      const first=`${y}-${String(m).padStart(2,'0')}-01`;
+      const last=new Date(y,m,0).toISOString().slice(0,10);
+      return (b.startDate>=first&&b.startDate<=last)||(b.endDate>=first&&b.endDate<=last)||(b.startDate<first&&b.endDate>last);
+    }
+    return true;
+  }
+  function getVisibleBookings(){
+    const q=($('bkSearch')?.value||'').toLowerCase(); const st=$('bkStatusFilter')?.value||'';
+    let list=(S().bookings||[]).filter(b=>{
+      if(!b) return false;
+      if(!inDateRange(b)) return false;
+      if(st && statusOf(b)!==st) return false;
+      const hay=(bookingNoOf(b)+' '+customerNameOf(b.customerId)+' '+(b.equipmentIds||[]).map(equipNameOf).join(' ')).toLowerCase();
+      return !q || hay.includes(q);
+    });
+    const sort=currentSort();
+    list=list.slice().sort((a,b)=>{
+      if(sort==='start') return D(a.startDate,a.startTime)-D(b.startDate,b.startTime);
+      if(sort==='end') return D(a.endDate,a.endTime)-D(b.endDate,b.endTime);
+      if(sort==='price') return (priceOf(b).total||0)-(priceOf(a).total||0);
+      return String(bookingNoOf(a)).localeCompare(String(bookingNoOf(b)),'ko',{numeric:true,sensitivity:'base'});
+    });
+    return list;
+  }
+  function ensureBookingToolbar(){
+    const toolbar=document.querySelector('#bookings .toolbar'); if(!toolbar) return;
+    if(!$('fhkBookingSortBar')){
+      const bar=document.createElement('div'); bar.id='fhkBookingSortBar'; bar.style.display='flex'; bar.style.gap='6px'; bar.style.alignItems='center'; bar.style.flexWrap='wrap';
+      bar.innerHTML=`<span class="meta">정렬</span>
+        <button class="btn btn-secondary btn-sm" data-sort="bookingNo" onclick="filmhkSetBookingSort('bookingNo')">예약번호 순</button>
+        <button class="btn btn-secondary btn-sm" data-sort="start" onclick="filmhkSetBookingSort('start')">빠른 렌탈순</button>
+        <button class="btn btn-secondary btn-sm" data-sort="end" onclick="filmhkSetBookingSort('end')">빠른 반납순</button>
+        <button class="btn btn-secondary btn-sm" data-sort="price" onclick="filmhkSetBookingSort('price')">렌탈견적순</button>
+        <button class="btn btn-danger btn-sm" onclick="filmhkDeleteSelectedBookings()">선택 삭제</button>
+        <button class="btn btn-secondary btn-sm" onclick="filmhkSelectVisibleBookings(true)">전체 선택</button>
+        <button class="btn btn-secondary btn-sm" onclick="filmhkSelectVisibleBookings(false)">선택 해제</button>`;
+      toolbar.appendChild(bar);
+    }
+    document.querySelectorAll('#fhkBookingSortBar [data-sort]').forEach(btn=>btn.classList.toggle('btn-primary',btn.dataset.sort===currentSort()));
+  }
+  window.filmhkSelectVisibleBookings=function(on){document.querySelectorAll('.fhk-booking-check').forEach(c=>c.checked=!!on);};
+  window.filmhkDeleteSelectedBookings=async function(){
+    const ids=[...document.querySelectorAll('.fhk-booking-check:checked')].map(c=>c.value);
+    if(!ids.length) return alert('삭제할 예약을 선택하세요.');
+    if(!confirm(ids.length+'건의 예약을 삭제할까요?')) return;
+    S().bookings=(S().bookings||[]).filter(b=>!ids.includes(b.id));
+    if(typeof save==='function') save();
+    if(typeof filmhkSaveNow==='function') await filmhkSaveNow();
+    renderBookings(); if(typeof renderCalendar==='function') renderCalendar(); if(typeof renderDashboard==='function') renderDashboard(); if(typeof renderQuotes==='function') renderQuotes();
+    alert('선택한 예약을 삭제했습니다.');
+  };
+  window.renderBookings=function(){
+    ensureBookingToolbar();
+    const list=getVisibleBookings(); const total=(S().bookings||[]).length;
+    const rows=list.map(b=>{const p=priceOf(b); const eff=statusOf(b); return `<tr class="${eff==='returned'?'booking-row-returned':''}">
+      <td style="width:32px"><input class="fhk-booking-check" type="checkbox" value="${H(b.id)}" onclick="event.stopPropagation()"></td>
+      <td><span class="booking-no" onclick="event.stopPropagation();openBookingDetail?openBookingDetail('${H(b.id)}'):openBookingModal('${H(b.id)}')">${H(bookingNoOf(b))}</span></td>
+      <td><span class="customer-pill" onclick="event.stopPropagation();filmhkOpenCustomerFromBooking('${H(b.customerId)}')">${H(customerNameOf(b.customerId))}</span></td>
+      <td>${(b.equipmentIds||[]).map(id=>`<div>${H(equipNameOf(id))}</div>`).join('')}</td>
+      <td>${H(b.startDate)} ${H(b.startTime||'')}<br>~ ${H(b.endDate)} ${H(b.endTime||'')}</td>
+      <td>${p.contPct||0}%${b.studentDiscount?' + 학생':''}${b.kongjuDiscount?' + 공주대':''}</td>
+      <td class="num"><b>${M(p.total)}</b></td>
+      <td>${badgeOf(b.payment||'unpaid')}</td>
+      <td>${badgeOf(eff)}${b.setShortage?'<br><span class="badge warn">세트장비 부족</span>':''}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="openBookingDetail?openBookingDetail('${H(b.id)}'):openBookingModal('${H(b.id)}')">상세/수정</button> <button class="btn btn-secondary btn-sm" onclick="openQuoteForBooking('${H(b.id)}')">견적서</button> ${eff!=='returned'?`<button class="btn btn-success btn-sm" onclick="markReturned('${H(b.id)}')">반납</button>`:''} <button class="btn btn-danger btn-sm" onclick="deleteBooking('${H(b.id)}')">삭제</button></td>
+    </tr>`}).join('');
+    const info=`<div class="meta" style="margin:0 0 10px 2px">표시 ${list.length}건 / 전체 예약 ${total}건</div>`;
+    const root=$('bookingsTable'); if(root) root.innerHTML=info+(list.length?`<div class="data-wrap"><table><thead><tr><th></th><th>예약번호</th><th>고객</th><th>장비</th><th>기간</th><th>할인</th><th>합계</th><th>입금</th><th>상태</th><th>관리</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">표시할 예약이 없습니다</div>');
+    ensureBookingToolbar();
+  };
+  window.filmhkOpenCustomerFromBooking=function(id){openCustomer(id)};
+  try{renderBookings=window.renderBookings}catch(e){}
+
+  function decorateSetRows(){
+    const wrap=$('v31SetRows'); if(!wrap) return;
+    [...wrap.querySelectorAll('.v31-row-card')].forEach((card,idx)=>{
+      card.draggable=true; card.dataset.dragIndex=String(idx);
+      let head=card.querySelector('.v31-row-head');
+      if(head && !head.querySelector('.fhk-drag-handle')) head.insertAdjacentHTML('afterbegin','<span class="fhk-drag-handle" title="드래그해서 순서 변경">☰</span>');
+      card.addEventListener('dragstart',ev=>{card.classList.add('fhk-dragging'); ev.dataTransfer.setData('text/plain',card.dataset.dragIndex||'');});
+      card.addEventListener('dragend',()=>{card.classList.remove('fhk-dragging'); decorateSetRows();});
+      card.addEventListener('dragover',ev=>{ev.preventDefault(); const dragging=wrap.querySelector('.fhk-dragging'); if(!dragging||dragging===card) return; const rect=card.getBoundingClientRect(); const after=(ev.clientY-rect.top)>rect.height/2; wrap.insertBefore(dragging, after?card.nextSibling:card);});
+    });
+  }
+  const oldV31Open=window.v31OpenSetComponentModal;
+  if(typeof oldV31Open==='function'){
+    window.v31OpenSetComponentModal=function(){const r=oldV31Open.apply(this,arguments); setTimeout(decorateSetRows,30); return r;};
+    try{v31OpenSetComponentModal=window.v31OpenSetComponentModal}catch(e){}
+  }
+  const oldAddSet=window.v31AddSetCondition;
+  if(typeof oldAddSet==='function'){
+    window.v31AddSetCondition=function(){const r=oldAddSet.apply(this,arguments); setTimeout(decorateSetRows,30); return r;};
+    try{v31AddSetCondition=window.v31AddSetCondition}catch(e){}
+  }
+  const oldRefresh=window.v31RefreshRowMembers;
+  if(typeof oldRefresh==='function'){
+    window.v31RefreshRowMembers=function(){const r=oldRefresh.apply(this,arguments); setTimeout(decorateSetRows,10); return r;};
+    try{v31RefreshRowMembers=window.v31RefreshRowMembers}catch(e){}
+  }
+  function setCompText(b,eid){
+    const groups=b?.setComponents || {};
+    const ids=Array.isArray(groups[eid])?groups[eid]:(Object.values((b?.setComponentGroups||{})[eid]||{}).flat());
+    return Array.from(new Set(ids||[])).map(equipNameOf).filter(Boolean).join(', ');
+  }
+  const prevQuote=window.renderQuote;
+  window.renderQuote=function(){
+    if(typeof prevQuote==='function') prevQuote.apply(this,arguments);
+    try{
+      document.querySelectorAll('#quoteContent .quote-doc table:not(.fhk-items) td').forEach(td=>{td.innerHTML=td.innerHTML.replace(/<br>\s*세트 구성:[\s\S]*?(?=<br>|$)/g,'').replace(/세트 구성:[\s\S]*$/g,'');});
+      const id=$('quoteBooking')?.value||''; const b=(S().bookings||[]).find(x=>x.id===id); if(!b) return;
+      const rows=document.querySelectorAll('#quoteContent .quote-doc table.fhk-items tbody tr');
+      (b.equipmentIds||[]).forEach((eid,i)=>{ const txt=setCompText(b,eid); if(!txt) return; const row=rows[i]; const cells=row?row.querySelectorAll('td'):[]; const target=cells[cells.length-1]; if(target && !target.textContent.includes('세트 구성:')) target.innerHTML=(target.innerHTML?target.innerHTML+'<br>':'')+'세트 구성: '+H(txt); });
+    }catch(e){console.warn('[FILM HK '+VERSION+'] quote guard',e)}
+  };
+  try{renderQuote=window.renderQuote}catch(e){}
+
+  window.copyQuoteText=function(){
+    const id=$('quoteBooking')?.value||''; const b=(S().bookings||[]).find(x=>x.id===id); if(!b) return alert('예약을 선택하세요.');
+    const p=priceOf(b); const supply=(p.total||0)-(p.vat||0);
+    const lines=(b.equipmentIds||[]).map(eid=>{const e=(typeof eq==='function'?eq(eid):null)||{}; const comp=setCompText(b,eid); return `- ${e.name||equipNameOf(eid)}${e.serial?' ('+e.serial+')':''}: ${M((e.rate||0)*(p.days||1))}${comp?' / 세트 구성: '+comp:''}`;}).join('\n');
+    const discount=[]; if(p.cont) discount.push(`회차할인 ${p.contPct||0}%: -${M(p.cont)}`); if(p.student) discount.push(`학생/독립영화 할인 ${p.studentPct||0}%: -${M(p.student)}`); if(p.kongju) discount.push(`공주대 할인 ${p.kongjuPct||0}%: -${M(p.kongju)}`); if(p.manual) discount.push(`추가할인: -${M(p.manual)}`);
+    const txt=`[FILM HK RENTAL 견적]\n고객: ${customerNameOf(b.customerId)}\n기간: ${b.startDate} ${b.startTime||''} ~ ${b.endDate} ${b.endTime||''}\n\n장비별 금액:\n${lines}\n\n${discount.length?'할인/정산:\n- '+discount.join('\n- ')+'\n\n':''}공급가: ${M(supply)}${p.vat?'\n부가세: '+M(p.vat):''}\n전체 합계: ${M(p.total)}`;
+    navigator.clipboard.writeText(txt).then(()=>alert('복사되었습니다.')).catch(()=>{prompt('아래 내용을 복사하세요.',txt)});
+  };
+  try{copyQuoteText=window.copyQuoteText}catch(e){}
+  const style=document.createElement('style'); style.textContent=`.fhk-drag-handle{cursor:grab;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#2a2d35;color:#e5e7eb;margin-right:8px;font-weight:900}.v31-row-card.fhk-dragging{opacity:.45;border-color:#fff}.booking-row-returned{opacity:.62}`; document.head.appendChild(style);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{updateVersion(); try{renderBookings()}catch(e){}}); else {updateVersion(); try{renderBookings()}catch(e){}}
+})();
+</script>
+
+
+
+<!-- FILM HK RENTAL v56: print title + optimized set-condition drag + separated booking toolbar UI -->
+<script>
+(function(){
+  'use strict';
+  const VERSION='v56';
+  const $=(id)=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const esc2=(v)=>String(v??'').replace(/[\\/:*?"<>|\s]+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+  const H=(v)=> (typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const D=(d,t)=>{try{return typeof dt==='function'?dt(d,t):new Date(String(d||'')+'T'+String(t||'00:00')+':00')}catch(e){return new Date(0)}};
+  const M=(n)=> (typeof fmt==='function'?fmt(n||0):((Number(n)||0).toLocaleString('ko-KR')+'원'));
+  function updateVersion(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h)h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  function bookingNoOf(b){try{ if(typeof ensureBookingNo==='function') return ensureBookingNo(b); if(typeof bookingNo==='function') return bookingNo(b); }catch(e){} return b?.bookingNo||b?.no||b?.id||'';}
+  function customerNameOf(id){try{return typeof customerName==='function'?customerName(id):((S().customers||[]).find(c=>c.id===id)?.name||'미지정')}catch(e){return '미지정'}}
+  function priceOf(b){try{return typeof priceBreakdown==='function'?priceBreakdown(b):{total:0}}catch(e){return {total:0}}}
+  function statusOf(b){try{return typeof effectiveBookingStatus==='function'?effectiveBookingStatus(b):b.status}catch(e){return b?.status||''}}
+
+  // 인쇄/PDF 기본 파일명 보조: 브라우저 인쇄 저장 파일명은 document.title을 따라가는 경우가 많아서 인쇄 직전 예약번호+이름으로 바꾼다.
+  let oldTitleForPrint=null;
+  function selectedQuoteBooking(){const id=$('quoteBooking')?.value||''; return (S().bookings||[]).find(b=>b.id===id)||null;}
+  function quoteFileTitle(){const b=selectedQuoteBooking(); if(!b)return 'FILM_HK_RENTAL_견적서'; return 'FILM_HK_RENTAL_'+esc2(bookingNoOf(b)||'예약')+'_'+esc2(customerNameOf(b.customerId)||'고객')+'_견적서';}
+  window.filmhkPrintQuote=function(){oldTitleForPrint=document.title; document.title=quoteFileTitle(); setTimeout(()=>window.print(),30);};
+  window.addEventListener('beforeprint',()=>{oldTitleForPrint=oldTitleForPrint||document.title; document.title=quoteFileTitle();});
+  window.addEventListener('afterprint',()=>{if(oldTitleForPrint){document.title=oldTitleForPrint;oldTitleForPrint=null;} updateVersion();});
+  function patchPrintButtons(){document.querySelectorAll('button').forEach(btn=>{const on=btn.getAttribute('onclick')||''; if(on.includes('window.print()')&&!btn.dataset.v56Print){btn.dataset.v56Print='1';btn.setAttribute('onclick','filmhkPrintQuote()');}});}
+
+  // 예약/대여 관리 툴바 재구성: 필터/정렬/선택작업을 시각적으로 분리
+  function bookingSort(){return window.__fhkBookingSort||'bookingNo'}
+  function setBookingSort(v){window.__fhkBookingSort=v; if(typeof renderBookings==='function')renderBookings();}
+  window.filmhkSetBookingSort=setBookingSort;
+  function ensureBookingToolbarV56(){
+    const toolbar=document.querySelector('#bookings .toolbar'); if(!toolbar)return;
+    if(!$('fhkBookingActionBar')){
+      const box=document.createElement('div'); box.id='fhkBookingActionBar'; box.className='fhk-booking-actionbar';
+      box.innerHTML=`
+        <div class="fhk-action-group fhk-filter-group"><b>보기/검색</b><span class="meta">기존 검색·상태 필터 사용</span></div>
+        <div class="fhk-action-group" id="fhkBookingSortBar"><b>정렬</b>
+          <button class="btn btn-secondary btn-sm" data-sort="bookingNo" onclick="filmhkSetBookingSort('bookingNo')">예약번호 순</button>
+          <button class="btn btn-secondary btn-sm" data-sort="start" onclick="filmhkSetBookingSort('start')">빠른 렌탈순</button>
+          <button class="btn btn-secondary btn-sm" data-sort="end" onclick="filmhkSetBookingSort('end')">빠른 반납순</button>
+          <button class="btn btn-secondary btn-sm" data-sort="price" onclick="filmhkSetBookingSort('price')">렌탈견적순</button>
+        </div>
+        <div class="fhk-action-group fhk-danger-group"><b>선택 작업</b>
+          <button class="btn btn-secondary btn-sm" onclick="filmhkSelectVisibleBookings(true)">표시 예약 선택</button>
+          <button class="btn btn-secondary btn-sm" onclick="filmhkSelectVisibleBookings(false)">부분선택 해제</button>
+          <button class="btn btn-danger btn-sm" onclick="filmhkDeleteSelectedBookings()">선택 예약 삭제</button>
+        </div>`;
+      toolbar.insertAdjacentElement('afterend',box);
+    }
+    document.querySelectorAll('#fhkBookingSortBar [data-sort]').forEach(btn=>{btn.classList.toggle('btn-primary',btn.dataset.sort===bookingSort());btn.classList.toggle('btn-secondary',btn.dataset.sort!==bookingSort());});
+    const old=$('fhkBookingSortBar'); if(old&&old.parentElement&&old.parentElement.id==='fhkBookingSortBar'&&old.parentElement!==$('fhkBookingActionBar')) old.remove();
+  }
+  function getVisibleBookingsV56(){
+    const q=($('bkSearch')?.value||'').toLowerCase(); const st=$('bkStatusFilter')?.value||'';
+    let list=(S().bookings||[]).filter(b=>{
+      if(!b)return false; if(st&&statusOf(b)!==st)return false;
+      const range=$('bkRangeFilter')?.value||'all'; const ym=$('bkMonthFilter')?.value||new Date().toISOString().slice(0,7);
+      const eff=statusOf(b);
+      if(range==='active'&&['returned','cancelled'].includes(eff))return false;
+      if(range==='returned'&&eff!=='returned')return false;
+      if(range==='month'){
+        const [y,m]=ym.split('-').map(Number); if(y&&m){const first=`${y}-${String(m).padStart(2,'0')}-01`; const last=new Date(y,m,0).toISOString().slice(0,10); if(!((b.startDate>=first&&b.startDate<=last)||(b.endDate>=first&&b.endDate<=last)||(b.startDate<first&&b.endDate>last)))return false;}
+      }
+      const eqs=(b.equipmentIds||[]).map(id=>{try{return equipmentName(id)}catch(e){return id}}).join(' ');
+      const hay=(bookingNoOf(b)+' '+customerNameOf(b.customerId)+' '+eqs).toLowerCase(); return !q||hay.includes(q);
+    });
+    list=list.slice().sort((a,b)=>{const sort=bookingSort(); if(sort==='start')return D(a.startDate,a.startTime)-D(b.startDate,b.startTime); if(sort==='end')return D(a.endDate,a.endTime)-D(b.endDate,b.endTime); if(sort==='price')return (priceOf(b).total||0)-(priceOf(a).total||0); return String(bookingNoOf(a)).localeCompare(String(bookingNoOf(b)),'ko',{numeric:true,sensitivity:'base'});});
+    return list;
+  }
+  // v55 renderBookings가 있으면 UI 분리만 보정, 없거나 꼬이면 안전한 렌더러 제공
+  const prevRenderBookings=window.renderBookings;
+  window.renderBookings=function(){
+    if(typeof prevRenderBookings==='function') prevRenderBookings.apply(this,arguments);
+    ensureBookingToolbarV56();
+    const oldBar=document.querySelector('#bookings .toolbar > #fhkBookingSortBar'); if(oldBar) oldBar.remove();
+    document.querySelectorAll('#fhkBookingSortBar [data-sort]').forEach(btn=>{btn.classList.toggle('btn-primary',btn.dataset.sort===bookingSort());btn.classList.toggle('btn-secondary',btn.dataset.sort!==bookingSort());});
+  };
+  try{renderBookings=window.renderBookings}catch(e){}
+
+  // 세트 구성조건 드래그 최적화: 기존 다중 이벤트 누적을 줄이고 한 컨테이너 위임으로 처리
+  let dragState={el:null,raf:0};
+  function resetOldDragListeners(){
+    const wrap=$('v31SetRows'); if(!wrap||wrap.dataset.v56Cloned)return; wrap.dataset.v56Cloned='1';
+    [...wrap.querySelectorAll('.v31-row-card')].forEach(card=>{const clone=card.cloneNode(true); card.replaceWith(clone);});
+  }
+  function installSetDragV56(){
+    const wrap=$('v31SetRows'); if(!wrap||wrap.dataset.v56DragReady)return; wrap.dataset.v56DragReady='1';
+    wrap.addEventListener('dragstart',ev=>{const card=ev.target.closest('.v31-row-card'); if(!card)return; dragState.el=card; card.classList.add('fhk-dragging'); ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain','move');});
+    wrap.addEventListener('dragend',()=>{if(dragState.el)dragState.el.classList.remove('fhk-dragging'); dragState.el=null;});
+    wrap.addEventListener('dragover',ev=>{
+      if(!dragState.el)return; ev.preventDefault();
+      if(dragState.raf)return; dragState.raf=requestAnimationFrame(()=>{dragState.raf=0; const afterEl=getDragAfterElement(wrap,ev.clientY); if(afterEl==null)wrap.appendChild(dragState.el); else wrap.insertBefore(dragState.el,afterEl); renumberSetRows();});
+    });
+  }
+  function getDragAfterElement(container,y){
+    const els=[...container.querySelectorAll('.v31-row-card:not(.fhk-dragging)')];
+    return els.reduce((closest,child)=>{const box=child.getBoundingClientRect(); const offset=y-box.top-box.height/2; if(offset<0&&offset>closest.offset)return {offset,element:child}; return closest;},{offset:Number.NEGATIVE_INFINITY,element:null}).element;
+  }
+  function renumberSetRows(){document.querySelectorAll('#v31SetRows .v31-row-card .v31-row-head b').forEach((b,i)=>{if(b.textContent.includes('구성 조건'))b.textContent='구성 조건 '+(i+1);});}
+  function decorateSetRowsV56(){
+    const wrap=$('v31SetRows'); if(!wrap)return; resetOldDragListeners();
+    [...wrap.querySelectorAll('.v31-row-card')].forEach((card,i)=>{card.draggable=true; if(!card.querySelector('.fhk-drag-handle')){const head=card.querySelector('.v31-row-head'); if(head)head.insertAdjacentHTML('afterbegin','<span class="fhk-drag-handle" title="드래그해서 순서 변경">☰</span>');} });
+    installSetDragV56(); renumberSetRows();
+  }
+  const oldOpenSet=window.v31OpenSetComponentModal;
+  if(typeof oldOpenSet==='function'){
+    window.v31OpenSetComponentModal=function(){const r=oldOpenSet.apply(this,arguments); setTimeout(decorateSetRowsV56,60); return r;};
+    try{v31OpenSetComponentModal=window.v31OpenSetComponentModal}catch(e){}
+  }
+  const oldAddSet=window.v31AddSetCondition;
+  if(typeof oldAddSet==='function'){
+    window.v31AddSetCondition=function(){const r=oldAddSet.apply(this,arguments); setTimeout(()=>{const wrap=$('v31SetRows'); if(wrap) delete wrap.dataset.v56Cloned; decorateSetRowsV56();},30); return r;};
+    try{v31AddSetCondition=window.v31AddSetCondition}catch(e){}
+  }
+  const oldSaveSet=window.v31SaveSetConditions;
+  if(typeof oldSaveSet==='function'){
+    window.v31SaveSetConditions=function(){renumberSetRows(); return oldSaveSet.apply(this,arguments);};
+    try{v31SaveSetConditions=window.v31SaveSetConditions}catch(e){}
+  }
+
+  const st=document.createElement('style'); st.textContent=`
+    .fhk-booking-actionbar{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:10px;margin:0 0 12px 0;align-items:stretch}.fhk-action-group{border:1px solid #2a2d35;background:#14161b;border-radius:10px;padding:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.fhk-action-group>b{font-size:12px;color:#fff;margin-right:4px}.fhk-danger-group{border-color:rgba(220,38,38,.35);background:rgba(127,29,29,.12)}.fhk-filter-group{color:#9ca3af}.fhk-drag-handle{cursor:grab;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:#2a2d35;color:#e5e7eb;margin-right:8px;font-weight:900;user-select:none}.v31-row-card{will-change:transform}.v31-row-card.fhk-dragging{opacity:.55;border-color:#fff;box-shadow:0 10px 26px rgba(0,0,0,.28)}@media(max-width:900px){.fhk-booking-actionbar{grid-template-columns:1fr}.fhk-action-group{align-items:flex-start}}`;
+  document.head.appendChild(st);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{updateVersion();patchPrintButtons();try{renderBookings()}catch(e){}}); else {updateVersion();patchPrintButtons();try{renderBookings()}catch(e){}}
+  document.addEventListener('click',()=>setTimeout(patchPrintButtons,50),true);
+})();
+</script>
+
+<!-- FILM HK RENTAL v57: chooser X delete + booking customer autocomplete keyboard + customer modal close fix -->
+<script>
+(function(){
+  'use strict';
+  const VERSION='v57';
+  const $=(id)=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=(v)=> (typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const M=(n)=> (typeof fmt==='function'?fmt(n||0):((Number(n)||0).toLocaleString('ko-KR')+'원'));
+  const V=(id)=> (typeof val==='function'?val(id):($(id)?.value||''));
+  const eqObj=(id)=>{try{return typeof eq==='function'?eq(id):(S().equipment||[]).find(e=>e.id===id)}catch(e){return (S().equipment||[]).find(x=>x.id===id)}};
+  const custObj=(id)=>{try{return typeof cust==='function'?cust(id):(S().customers||[]).find(c=>c.id===id)}catch(e){return (S().customers||[]).find(x=>x.id===id)}};
+  const customerNameOf=(id)=>{try{return typeof customerName==='function'?customerName(id):(custObj(id)?.name||'')}catch(e){return custObj(id)?.name||''}};
+  const isSet=(id)=>{try{return typeof isSetEquipment==='function'?isSetEquipment(id):/세트|SET|FULL|패키지/i.test(((eqObj(id)||{}).category||'')+' '+((eqObj(id)||{}).name||''))}catch(e){return false}};
+  const flatGroups=(groups)=>{try{return typeof flatSetGroups==='function'?flatSetGroups(groups||{}):(groups||{})}catch(e){return groups||{}}};
+  const equipName=(id)=>{try{return typeof equipmentName==='function'?equipmentName(id):((eqObj(id)||{}).name||id)}catch(e){return (eqObj(id)||{}).name||id}};
+
+  function updateVersion(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  function refreshBookingViews(){try{renderSelectedEquipments&&renderSelectedEquipments()}catch(e){} try{updateBookingPreview&&updateBookingPreview()}catch(e){} try{renderChooser&&renderChooser()}catch(e){} try{renderChooserSummary&&renderChooserSummary()}catch(e){}}
+  window.filmhkRemoveChooserItem=function(id){
+    window.chooserSelection=(window.chooserSelection||chooserSelection||[]).filter(x=>x!==id);
+    try{chooserSelection=window.chooserSelection}catch(e){}
+    if(window.__filmhkSetComponentGroups) delete window.__filmhkSetComponentGroups[id];
+    refreshBookingViews();
+  };
+
+  window.renderSelectedEquipments=function(){
+    const box=$('selectedEquipments'); if(!box) return;
+    const sel=window.chooserSelection||chooserSelection||[];
+    if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const days=(typeof billDays==='function')?billDays(V('bkStartDate'),V('bkStartTime'),V('bkEndDate'),V('bkEndTime')):1;
+    box.innerHTML='<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>'+sel.map(id=>{const e=eqObj(id)||{}; const comps=(flatGroups(window.__filmhkSetComponentGroups)[id]||[]).map(equipName).join(', '); return `<tr><td><b>${H(e.name||'')}</b><br><span class="meta">${H(e.serial||'')}</span>${isSet(id)?`<div class="meta" style="margin-top:4px">세트 구성: ${H(comps||'미선택')}</div>`:''}</td><td class="num">${M(e.rate||0)}</td><td class="num">${days}일 · ${M((e.rate||0)*days)}</td><td><button class="mini-x" title="선택 삭제" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button></td></tr>`}).join('')+'</tbody></table>';
+  };
+  try{renderSelectedEquipments=window.renderSelectedEquipments}catch(e){}
+
+  window.renderChooserSummary=function(){
+    const box=$('chooserSelectedSummary'); if(!box) return;
+    const sel=window.chooserSelection||chooserSelection||[];
+    if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    try{ sel.filter(isSet).forEach(id=>{ window.__filmhkSetComponentGroups=window.__filmhkSetComponentGroups||{}; window.__filmhkSetComponentGroups[id]=window.__filmhkSetComponentGroups[id]||{}; if(typeof autoPickForSet==='function' && Object.keys(window.__filmhkSetComponentGroups[id]).length===0) autoPickForSet(id); }); }catch(e){}
+    const b={equipmentIds:sel,startDate:V('bkStartDate'),startTime:V('bkStartTime'),endDate:V('bkEndDate'),endTime:V('bkEndTime'),studentDiscount:$('bkStudentDiscount')?.checked,kongjuDiscount:$('bkKongjuDiscount')?.checked,vat:$('bkVat')?.checked,discount:Number(V('bkManualDiscount'))||0};
+    const p=(typeof priceBreakdown==='function')?priceBreakdown(b):{days:1,base:0,contPct:0,cont:0,total:0};
+    const missing=(typeof missingSetSummary==='function')?missingSetSummary(window.__filmhkSetComponentGroups||[]):[];
+    const rows=sel.map(id=>{const e=eqObj(id)||{}; const comps=(flatGroups(window.__filmhkSetComponentGroups)[id]||[]).map(equipName).join(', '); const miss=missing.filter(x=>String(x).startsWith((typeof modelName==='function'?modelName(id):(e.name||''))+' / ')); return `<div class="price-row fhk-summary-row"><button class="mini-x" title="선택 삭제" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button><span class="fhk-summary-name">${H(e.name||'')}<br><small>${H(e.serial||'')}</small>${isSet(id)?`<br><button class="btn btn-secondary btn-sm" style="margin-top:5px" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button><br><small>${H(comps||'구성 미선택')}</small>${miss.length?`<br><small style="color:#f87171">${H('부족: '+miss.length+'개 조건')}</small>`:''}`:''}</span><b>${M((e.rate||0)*(p.days||1))}</b></div>`}).join('');
+    box.innerHTML=`<div class="meta" style="margin-bottom:8px">${H(typeof rentalDurationText==='function'?rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime):'')}</div>${rows}<div class="price-row"><span>장비 소계</span><b>${M(p.base)}</b></div><div class="price-row"><span>회차할인 ${p.contPct||0}%</span><b>- ${M(p.cont||0)}</b></div>${p.studentPct?`<div class="price-row"><span>학생/독립영화 ${p.studentPct}%</span><b>- ${M(p.student)}</b></div>`:''}${p.kongjuPct?`<div class="price-row"><span>공주대 ${p.kongjuPct}%</span><b>- ${M(p.kongju)}</b></div>`:''}<div class="price-row total"><span>예상 합계</span><b>${M(p.total)}</b></div>`;
+  };
+  try{renderChooserSummary=window.renderChooserSummary}catch(e){}
+
+  let suggestIds=[]; let suggestIndex=-1;
+  function setActiveSuggest(idx){
+    const items=[...($('customerSuggest')?.querySelectorAll('[data-customer-suggest]')||[])];
+    if(!items.length){suggestIndex=-1;return}
+    suggestIndex=Math.max(0,Math.min(idx,items.length-1));
+    items.forEach((el,i)=>el.classList.toggle('active',i===suggestIndex));
+    items[suggestIndex]?.scrollIntoView({block:'nearest'});
+  }
+  window.showCustomerSuggestions=function(){
+    const input=$('bkCustomerSearch'), box=$('customerSuggest'); if(!input||!box) return;
+    const q=(input.value||'').toLowerCase().trim();
+    const list=(S().customers||[]).filter(c=>!q||String((c.name||'')+(c.phone||'')+(c.type||'')).toLowerCase().includes(q)).slice(0,8);
+    suggestIds=list.map(c=>c.id).concat(['__new__']); suggestIndex=-1;
+    box.innerHTML=list.map((c,i)=>`<div class="suggest-item" data-customer-suggest="${i}" data-id="${H(c.id)}" onclick="selectCustomer('${H(c.id)}')"><b>${H(c.name)}</b> <span class="badge gray">${H(c.type)}</span><div class="sub">${H(c.phone||'')} ${H(c.note||'')}</div></div>`).join('')+`<div class="suggest-item" data-customer-suggest="${list.length}" data-id="__new__" onclick="openCustomerFromBooking()">+ 신규 고객 등록</div>`;
+    box.classList.add('active');
+  };
+  try{showCustomerSuggestions=window.showCustomerSuggestions}catch(e){}
+
+  function handleCustomerSearchKey(ev){
+    if(ev.isComposing) return;
+    const input=$('bkCustomerSearch'), box=$('customerSuggest');
+    if(!input || ev.target!==input) return;
+    if(ev.key==='ArrowDown' || ev.key==='ArrowUp'){
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      if(!box?.classList.contains('active')) window.showCustomerSuggestions();
+      const count=box?.querySelectorAll('[data-customer-suggest]').length||0; if(!count) return;
+      setActiveSuggest(ev.key==='ArrowDown' ? (suggestIndex+1+count)%count : (suggestIndex-1+count)%count);
+      return;
+    }
+    if(ev.key==='Escape'){
+      box?.classList.remove('active'); suggestIndex=-1; return;
+    }
+    if(ev.key==='Enter'){
+      if(box?.classList.contains('active') && suggestIndex>=0){
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        const item=box.querySelectorAll('[data-customer-suggest]')[suggestIndex]; const id=item?.dataset.id;
+        if(id==='__new__') window.openCustomerFromBooking&&window.openCustomerFromBooking();
+        else if(id) window.selectCustomer&&window.selectCustomer(id);
+        return;
+      }
+      const cid=$('bkCustomerId')?.value||'';
+      if(cid && input.value.trim()===customerNameOf(cid)){
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        window.saveBooking&&window.saveBooking();
+        return;
+      }
+    }
+  }
+  window.addEventListener('keydown',handleCustomerSearchKey,true);
+
+  function patchBookingInputs(){
+    document.querySelectorAll('#bookingModal input, #bookingModal textarea, #bookingModal select').forEach(el=>{ if(el.id!=='bkCustomerSearch') el.setAttribute('autocomplete','off'); });
+    const input=$('bkCustomerSearch'); if(input){ input.setAttribute('autocomplete','off'); input.setAttribute('oninput','showCustomerSuggestions()'); input.setAttribute('onfocus','showCustomerSuggestions()'); }
+  }
+
+  document.addEventListener('click',function(ev){
+    const close=ev.target.closest('#customerModal .close');
+    if(close){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); const cm=$('customerModal'); if(cm){cm.classList.remove('active','front','top','tip-top','above-stats','fhk-v24-customer-top'); cm.style.zIndex=''; const d=cm.querySelector('.modal'); if(d)d.style.zIndex='';} const bm=$('bookingModal'); if(bm)bm.classList.remove('fhk-v24-booking-keep'); window.__returnToBooking=false; window.__v24CustomerFromBooking=false; }
+  },true);
+
+  const st=document.createElement('style'); st.textContent=`
+    .suggest-item.active{background:#2a2d35!important;color:#fff;box-shadow:inset 3px 0 0 #fff}.fhk-summary-row{align-items:flex-start;gap:8px}.fhk-summary-row .mini-x{flex:0 0 20px;margin-top:2px}.fhk-summary-name{flex:1;min-width:0}.mini-x{border:0;background:#3a2024;color:#fca5a5;border-radius:999px;width:20px;height:20px;line-height:20px;cursor:pointer;font-weight:900;text-align:center}.mini-x:hover{background:#7f1d1d;color:#fff}`;
+  document.head.appendChild(st);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{updateVersion();patchBookingInputs();refreshBookingViews();}); else {updateVersion();patchBookingInputs();refreshBookingViews();}
+})();
+</script>
+
+
+<!-- FILM HK RENTAL v58: restore set selection in equipment chooser -->
+<script>
+(function(){
+  'use strict';
+  const VERSION='v58';
+  const $=(id)=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=(v)=> (typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const M=(n)=> (typeof fmt==='function'?fmt(n||0):((Number(n)||0).toLocaleString('ko-KR')+'원'));
+  const V=(id)=> (typeof val==='function'?val(id):($(id)?.value||''));
+  const getEq=(id)=>{try{return typeof eq==='function'?eq(id):(S().equipment||[]).find(e=>e.id===id)}catch(e){return (S().equipment||[]).find(x=>x.id===id)}};
+  const isSetId=(id)=>{const e=getEq(id)||{}; return /세트|SET|FULL|패키지/i.test(String(e.category||'')+' '+String(e.name||''));};
+  const model=(e)=>{try{return typeof modelKey==='function'?modelKey(e):(e.name||'').trim()}catch(_){return (e.name||'').trim()}};
+  const statusOf=(s)=>{try{return typeof statusText==='function'?statusText(s):s}catch(_){return s}};
+  const equipName=(id)=>{try{return typeof equipmentName==='function'?equipmentName(id):((getEq(id)||{}).name||id)}catch(_){return (getEq(id)||{}).name||id}};
+  function updateVersion(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  function chooserDates(){return {sD:V('bkStartDate'),eD:V('bkEndDate'),sT:V('bkStartTime')||'10:00',eT:V('bkEndTime')||'22:00',ignore:V('bkId')||''};}
+  function conflictInfo(e,d){
+    let conflicts=[]; try{conflicts=typeof conflictBookings==='function'?conflictBookings(e.id,d.sD,d.eD,d.sT,d.eT,d.ignore):[]}catch(_){}
+    if(e.status && e.status!=='available') return {ok:false,text:'상태: '+statusOf(e.status)};
+    if(conflicts.length){const b=conflicts[0]; return {ok:false,text:`예약 불가능 (${b.startDate} ${b.startTime}~${b.endDate} ${b.endTime})`};}
+    return {ok:true,text:'예약 가능'};
+  }
+  function setShortages(e,d){
+    if(!isSetId(e.id) || typeof window.getSetComponentShortages!=='function') return [];
+    try{return window.getSetComponentShortages(e.id,d.sD,d.eD,d.sT,d.eT,d.ignore)||[]}catch(_){return []}
+  }
+  function ensureSetStore(){
+    try{ if(typeof currentBookingSetComponents==='undefined') window.currentBookingSetComponents={}; }catch(_){}
+    window.currentBookingSetComponents=window.currentBookingSetComponents||{};
+    try{ currentBookingSetComponents=window.currentBookingSetComponents; }catch(_){}
+    return window.currentBookingSetComponents;
+  }
+  window.renderChooser=function(){
+    const d=chooserDates(); const q=($('chooserSearch')?.value||'').trim().toLowerCase();
+    if($('chooserDateLabel')) $('chooserDateLabel').textContent=`${d.sD||''} ${d.sT} ~ ${d.eD||''} ${d.eT} · ${typeof rentalDurationText==='function'?rentalDurationText(d.sD,d.sT,d.eD,d.eT):''}`;
+    const cats=S().categories||[]; if(!window.currentChooserCat && cats.length) window.currentChooserCat=cats[0];
+    if($('chooserCats')) $('chooserCats').innerHTML=(q?`<button class="side-btn active" onclick="document.getElementById('chooserSearch').focus()">전체 장비 검색 중</button>`:'')+cats.map(c=>`<button class="side-btn ${!q&&currentChooserCat===c?'active':''}" onclick="currentChooserCat='${H(c)}';currentChooserModel='';renderChooser()">${H(c)}</button>`).join('');
+    const filtered=(S().equipment||[]).filter(e=>{const hay=(String(e.name||'')+' '+String(e.serial||'')+' '+String(e.category||'')+' '+String(e.note||'')).toLowerCase(); return q?hay.includes(q):e.category===currentChooserCat;});
+    const groups={}; filtered.forEach(e=>{(groups[model(e)]=groups[model(e)]||[]).push(e)});
+    const models=Object.keys(groups); if(!window.currentChooserModel || !groups[currentChooserModel]) window.currentChooserModel=models[0]||'';
+    const selectedList=()=>{try{return window.chooserSelection||chooserSelection||[]}catch(_){return window.chooserSelection||[]}};
+    if($('chooserModels')) $('chooserModels').innerHTML=models.map(m=>{
+      const list=groups[m]; const available=list.filter(e=>selectedList().includes(e.id)||conflictInfo(e,d).ok).length; const selected=list.filter(e=>selectedList().includes(e.id)).length; const catLabel=[...new Set(list.map(e=>e.category).filter(Boolean))].join(' / ');
+      return `<div class="model-card ${currentChooserModel===m?'expanded':''}" onclick="currentChooserModel='${H(m)}';renderChooser()"><div class="model-title">${H(m)}</div><div class="model-meta">${H(catLabel)} · 총 ${list.length}대 · 가능 ${available}대 · 선택 ${selected}대<br>${M(list[0]?.rate||0)}/일</div></div>`;
+    }).join('')||'<div class="empty">검색 결과가 없습니다</div>';
+    const inst=groups[currentChooserModel]||[];
+    if($('chooserInstances')) $('chooserInstances').innerHTML=inst.map(e=>{
+      const selected=selectedList().includes(e.id); const c=conflictInfo(e,d); const shortages=setShortages(e,d);
+      // 세트는 구성품이 부족해도 우선 선택 가능하게 열어둔다. 선택 후 오른쪽에서 구성품을 직접 고를 수 있게 하기 위함.
+      const ok=selected || c.ok || isSetId(e.id);
+      const warn=(shortages.length&&!selected)?`<div class="sub" style="color:#fbbf24">구성품 확인 필요 · 오른쪽 선택 목록에서 ‘세트 구성 선택’을 눌러 직접 배정</div>`:'';
+      const reason=shortages.length&&!selected?'예약 가능 · 구성품 직접 선택 필요':c.text;
+      return `<label class="instance ${ok?'':'disabled'}"><input type="checkbox" ${selected?'checked':''} ${ok?'':'disabled'} onchange="toggleChooser('${H(e.id)}',this.checked)"><div><div class="main">${H(e.serial||e.name)} <span class="meta">${H(e.category||'')}</span></div><div class="sub">${H(e.name||'')} · ${H(reason)}</div>${warn}</div></label>`;
+    }).join('')||'<div class="empty">모델을 선택하세요</div>';
+    if(typeof renderChooserSummary==='function') renderChooserSummary();
+  };
+  try{renderChooser=window.renderChooser}catch(_){}
+
+  window.filmhkRemoveChooserItem=function(id){
+    const sel=(window.chooserSelection||chooserSelection||[]).filter(x=>x!==id); window.chooserSelection=sel; try{chooserSelection=sel}catch(_){}
+    const store=ensureSetStore(); delete store[id];
+    try{renderChooser()}catch(_){} try{renderSelectedEquipments()}catch(_){} try{updateBookingPreview()}catch(_){}
+  };
+
+  window.renderChooserSummary=function(){
+    const box=$('chooserSelectedSummary'); if(!box) return; const sel=window.chooserSelection||chooserSelection||[];
+    if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const store=ensureSetStore(); const b={equipmentIds:sel,startDate:V('bkStartDate'),startTime:V('bkStartTime'),endDate:V('bkEndDate'),endTime:V('bkEndTime'),studentDiscount:$('bkStudentDiscount')?.checked,kongjuDiscount:$('bkKongjuDiscount')?.checked,vat:$('bkVat')?.checked,discount:Number(V('bkManualDiscount'))||0};
+    const p=(typeof priceBreakdown==='function')?priceBreakdown(b):{days:1,base:0,contPct:0,cont:0,total:0};
+    const rows=sel.map(id=>{const e=getEq(id)||{}; const comps=(store[id]||[]).map(equipName).join(', '); return `<div class="price-row fhk-summary-row"><button class="mini-x" title="선택 삭제" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button><span class="fhk-summary-name">${H(e.name||'')}<br><small>${H(e.serial||'')}</small>${isSetId(id)?`<br><button class="btn btn-secondary btn-sm" style="margin-top:5px" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button><br><small>${H(comps||'구성 미선택')}</small>`:''}</span><b>${M((e.rate||0)*(p.days||1))}</b></div>`}).join('');
+    box.innerHTML=`<div class="meta" style="margin-bottom:8px">${H(typeof rentalDurationText==='function'?rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime):'')}</div>${rows}<div class="price-row"><span>장비 소계</span><b>${M(p.base)}</b></div><div class="price-row"><span>회차할인 ${p.contPct||0}%</span><b>- ${M(p.cont||0)}</b></div>${p.studentPct?`<div class="price-row"><span>학생/독립영화 ${p.studentPct}%</span><b>- ${M(p.student)}</b></div>`:''}${p.kongjuPct?`<div class="price-row"><span>공주대 ${p.kongjuPct}%</span><b>- ${M(p.kongju)}</b></div>`:''}<div class="price-row total"><span>예상 합계</span><b>${M(p.total)}</b></div>`;
+  };
+  try{renderChooserSummary=window.renderChooserSummary}catch(_){}
+
+  window.renderSelectedEquipments=function(){
+    const box=$('selectedEquipments'); if(!box) return; const sel=window.chooserSelection||chooserSelection||[];
+    if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const store=ensureSetStore(); const days=(typeof billDays==='function')?billDays(V('bkStartDate'),V('bkStartTime'),V('bkEndDate'),V('bkEndTime')):1;
+    box.innerHTML='<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>'+sel.map(id=>{const e=getEq(id)||{}; const comps=(store[id]||[]).map(equipName).join(', '); return `<tr><td><b>${H(e.name||'')}</b><br><span class="meta">${H(e.serial||'')}</span>${isSetId(id)?`<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button></div><div class="meta">${H(comps||'구성 미선택')}</div>`:''}</td><td class="num">${M(e.rate||0)}</td><td class="num">${days}일 · ${M((e.rate||0)*days)}</td><td><button class="mini-x" title="선택 삭제" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button></td></tr>`}).join('')+'</tbody></table>';
+  };
+  try{renderSelectedEquipments=window.renderSelectedEquipments}catch(_){}
+
+  const css=document.createElement('style'); css.textContent='.fhk-summary-row{align-items:flex-start;gap:8px}.fhk-summary-name{flex:1;min-width:0}.mini-x{border:0;background:#3a2024;color:#fca5a5;border-radius:999px;width:20px;height:20px;line-height:20px;cursor:pointer;font-weight:900;text-align:center}.mini-x:hover{background:#7f1d1d;color:#fff}'; document.head.appendChild(css);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{updateVersion(); try{if($('chooserModal')?.classList.contains('active'))renderChooser(); renderSelectedEquipments();}catch(_){}}); else {updateVersion(); try{if($('chooserModal')?.classList.contains('active'))renderChooser(); renderSelectedEquipments();}catch(_){}}
+})();
+</script>
+
+
+<!-- FILM HK RENTAL v59: prevent same-booking duplicate use between single items and set components -->
+<script>
+(function(){
+  const VERSION='v59';
+  const $=(id)=>document.getElementById(id);
+  const H=(v)=> (typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  function selectedList(){try{return window.chooserSelection||chooserSelection||[]}catch(_){return window.chooserSelection||[]}}
+  function isSet(id){try{return typeof isSetEquipment==='function'?isSetEquipment(id):(typeof isSetId==='function'?isSetId(id):false)}catch(_){return typeof isSetId==='function'?isSetId(id):false}}
+  function selectedSingles(){return new Set(selectedList().filter(id=>!isSet(id)));}
+  function flatGroups(g){const out={}; Object.entries(g||{}).forEach(([sid,v])=>{out[sid]=Array.isArray(v)?v.slice():Array.from(new Set(Object.values(v||{}).flat()));}); return out;}
+  function getCurrent(){window.currentBookingSetComponents=window.currentBookingSetComponents||{}; return window.currentBookingSetComponents;}
+  function getLegacy(){window.__filmhkSetComponentGroups=window.__filmhkSetComponentGroups||{}; return window.__filmhkSetComponentGroups;}
+  function mergeStores(){
+    const singles=selectedSingles();
+    const merged={};
+    const add=(sid,ids)=>{(ids||[]).forEach(id=>{if(!id||singles.has(id))return; merged[sid]=merged[sid]||[]; if(!merged[sid].includes(id)) merged[sid].push(id);});};
+    Object.entries(flatGroups(getCurrent())).forEach(([sid,ids])=>add(sid,ids));
+    Object.entries(flatGroups(getLegacy())).forEach(([sid,ids])=>add(sid,ids));
+    const used={};
+    Object.keys(merged).forEach(sid=>{merged[sid]=merged[sid].filter(id=>{if(used[id]&&used[id]!==sid)return false; used[id]=sid; return true;}); if(!merged[sid].length) delete merged[sid];});
+    window.currentBookingSetComponents={}; Object.entries(merged).forEach(([sid,ids])=>window.currentBookingSetComponents[sid]=ids.slice());
+    window.__filmhkSetComponentGroups={}; Object.entries(merged).forEach(([sid,ids])=>window.__filmhkSetComponentGroups[sid]={_selected:ids.slice()});
+    return merged;
+  }
+  function ownerMap(){const m={}; Object.entries(mergeStores()).forEach(([sid,ids])=>ids.forEach(id=>m[id]=sid)); return m;}
+  function decorateSetComponentModal(setId){
+    const singles=selectedSingles(); const owners=ownerMap(); const current=window.currentBookingSetComponents||{};
+    document.querySelectorAll('[data-set-component]').forEach(input=>{
+      const id=input.dataset.setComponent; const row=input.closest('.instance'); let reason='';
+      if((current[setId]||[]).includes(id)) input.checked=true;
+      if(singles.has(id)) reason='이미 단품으로 선택된 장비라 세트 구성품으로 중복 선택할 수 없습니다.';
+      else if(owners[id] && owners[id]!==setId) reason='이미 다른 세트 구성품으로 선택된 장비입니다.';
+      if(reason){input.checked=false; input.disabled=true; row&&row.classList.add('disabled'); const sub=row&&row.querySelector('.sub'); if(sub&&!sub.textContent.includes(reason)) sub.innerHTML+=`<br><span style="color:#f87171">${H(reason)}</span>`;}
+    });
+  }
+  const oldOpenSet=window.openSetComponentSelector;
+  window.openSetComponentSelector=function(setId){mergeStores(); const r=oldOpenSet?oldOpenSet.apply(this,arguments):undefined; setTimeout(()=>decorateSetComponentModal(setId),0); return r;};
+  const oldAuto=window.filmhkAutoPickSetComponents;
+  window.filmhkAutoPickSetComponents=function(){mergeStores(); const r=oldAuto?oldAuto.apply(this,arguments):undefined; setTimeout(()=>{mergeStores(); if(window.__editingSetId) decorateSetComponentModal(window.__editingSetId);},0); return r;};
+  const oldApply=window.filmhkApplySetComponents;
+  window.filmhkApplySetComponents=function(){
+    const singles=selectedSingles();
+    document.querySelectorAll('[data-set-component]:checked').forEach(input=>{if(singles.has(input.dataset.setComponent)) input.checked=false;});
+    const r=oldApply?oldApply.apply(this,arguments):undefined;
+    mergeStores(); try{renderChooser();renderSelectedEquipments();renderChooserSummary();updateBookingPreview();}catch(_){ }
+    return r;
+  };
+  const oldToggle=window.toggleChooser;
+  window.toggleChooser=function(id,checked){
+    if(checked){const owners=ownerMap(); if(owners[id]){alert('이미 세트 구성품으로 선택된 개별 장비입니다. 먼저 해당 세트의 구성에서 해제해 주세요.'); try{renderChooser()}catch(_){ } return;}}
+    const r=oldToggle?oldToggle.apply(this,arguments):undefined; mergeStores(); try{renderChooser();renderSelectedEquipments();renderChooserSummary();updateBookingPreview();}catch(_){ } return r;
+  };
+  const oldRemove=window.filmhkRemoveChooserItem;
+  window.filmhkRemoveChooserItem=function(id){const r=oldRemove?oldRemove.apply(this,arguments):undefined; mergeStores(); try{renderChooser();renderSelectedEquipments();renderChooserSummary();updateBookingPreview();}catch(_){ } return r;};
+  const oldRenderChooser=window.renderChooser;
+  window.renderChooser=function(){mergeStores(); const r=oldRenderChooser?oldRenderChooser.apply(this,arguments):undefined; const owners=ownerMap(); document.querySelectorAll('#chooserInstances input[type="checkbox"]').forEach(input=>{const m=String(input.getAttribute('onchange')||'').match(/toggleChooser\('([^']+)'/); const id=m&&m[1]; if(id&&owners[id]){input.disabled=true; const row=input.closest('.instance'); row&&row.classList.add('disabled'); const sub=row&&row.querySelector('.sub'); if(sub&&!sub.textContent.includes('세트 구성품')) sub.innerHTML+='<br><span style="color:#f87171">이미 세트 구성품으로 선택됨</span>';}}); return r;};
+  const oldSave=window.saveBooking;
+  window.saveBooking=function(){mergeStores(); return oldSave?oldSave.apply(this,arguments):undefined;};
+  function updateVersion(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',updateVersion); else updateVersion();
+})();
+</script>
+
+<!-- FILM HK RENTAL v60: restore set chooser + draggable categories + model actions -->
+<script>
+(function(){
+  const VERSION='v60';
+  const $=id=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=v=>(typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const M=n=>(typeof fmt==='function'?fmt(n):(Number(n)||0).toLocaleString('ko-KR')+'원');
+  const V=id=>$(id)?.value||'';
+  const getEq=id=>(S().equipment||[]).find(e=>e.id===id);
+  const getModel=e=>(typeof modelKey==='function'?modelKey(e):((e&&e.name)||'').trim());
+  const catType=cat=>{try{return typeof categoryType==='function'?categoryType(cat):(/세트|패키지/i.test(cat)?'set':'single')}catch(_){return /세트|패키지/i.test(cat)?'set':'single'}};
+  const isSetObj=e=>!!e && (catType(e.category)==='set'||/FULL\s*SET|\bSET\b|세트|패키지/i.test((e.name||'')+' '+(e.category||'')));
+  const isSetId=id=>isSetObj(getEq(id));
+  const selected=()=>{try{return window.chooserSelection||chooserSelection||[]}catch(_){return window.chooserSelection||[]}};
+  const setSelected=a=>{window.chooserSelection=[...new Set(a)]; try{chooserSelection=window.chooserSelection}catch(_){}};
+  const saveSt=()=>{try{save()}catch(_){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(S()))}catch(__){}}};
+  function bump(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+
+  function setStore(){ window.currentBookingSetComponents=window.currentBookingSetComponents||{}; window.__filmhkSetComponentGroups=window.__filmhkSetComponentGroups||{}; return window.currentBookingSetComponents; }
+  function normalizeSetStore(){
+    const store=setStore(); const singles=new Set(selected().filter(id=>!isSetId(id))); const used={};
+    Object.keys(store).forEach(sid=>{store[sid]=(Array.isArray(store[sid])?store[sid]:Object.values(store[sid]||{}).flat()).filter(id=>id && !singles.has(id) && (!used[id] || used[id]===sid)); store[sid].forEach(id=>used[id]=sid); if(!store[sid].length) delete store[sid];});
+    window.__filmhkSetComponentGroups={}; Object.entries(store).forEach(([sid,ids])=>window.__filmhkSetComponentGroups[sid]={_selected:ids.slice()});
+    return store;
+  }
+  function componentOwnerMap(){const m={}; Object.entries(normalizeSetStore()).forEach(([sid,ids])=>ids.forEach(id=>m[id]=sid)); return m;}
+
+  // 예약의 장비 추가/제거: 세트 카테고리/모델 클릭 시 개별 세트 장비가 반드시 뜨도록 완전 복구
+  window.renderChooser=function(){
+    normalizeSetStore();
+    const st=S(), sD=V('bkStartDate'), eD=V('bkEndDate'), sT=V('bkStartTime'), eT=V('bkEndTime'), ignore=V('bkId'), q=(V('chooserSearch')||'').toLowerCase();
+    if($('chooserDateLabel')) $('chooserDateLabel').textContent=`${sD} ${sT} ~ ${eD} ${eT} · ${(typeof rentalDurationText==='function')?rentalDurationText(sD,sT,eD,eT):''}`;
+    const cats=st.categories||[]; if(!window.currentChooserCat || !cats.includes(window.currentChooserCat)) window.currentChooserCat=cats[0]||'';
+    if($('chooserCats')) $('chooserCats').innerHTML=cats.map(c=>`<button class="side-btn ${window.currentChooserCat===c?'active':''}" onclick="currentChooserCat='${H(c)}';window.currentChooserCat='${H(c)}';currentChooserModel='';window.currentChooserModel='';renderChooser()">${H(c)} <span class="v28-type-pill ${catType(c)==='set'?'set':''}">${catType(c)==='set'?'세트':'단품'}</span></button>`).join('');
+    const filtered=(st.equipment||[]).filter(e=>e.category===window.currentChooserCat && (!q || ((e.name||'')+(e.serial||'')).toLowerCase().includes(q)));
+    const groups={}; filtered.forEach(e=>{const m=getModel(e); (groups[m]=groups[m]||[]).push(e);});
+    const models=Object.keys(groups); if(!window.currentChooserModel || !groups[window.currentChooserModel]) window.currentChooserModel=models[0]||'';
+    if($('chooserModels')) $('chooserModels').innerHTML=models.map(m=>{const list=groups[m], avail=list.filter(e=>{try{return (typeof isAvailable==='function'?isAvailable(e,sD,eD,sT,eT,ignore):true)||selected().includes(e.id)}catch(_){return true}}).length, sel=list.filter(e=>selected().includes(e.id)).length; return `<div class="model-card ${window.currentChooserModel===m?'expanded':''}" onclick="currentChooserModel='${H(m)}';window.currentChooserModel='${H(m)}';renderChooser()"><div class="model-title">${H(m)}</div><div class="model-meta">총 ${list.length}대 · 가능 ${avail}대 · 선택 ${sel}대<br>${M(list[0]?.rate||0)}/일</div></div>`;}).join('')||'<div class="empty">장비 모델 없음</div>';
+    const owners=componentOwnerMap(), inst=groups[window.currentChooserModel]||[];
+    if($('chooserInstances')) $('chooserInstances').innerHTML=inst.map(e=>{
+      let conflicts=[]; try{conflicts=typeof conflictBookings==='function'?conflictBookings(e.id,sD,eD,sT,eT,ignore):[]}catch(_){}
+      const isSel=selected().includes(e.id), ownedBy=owners[e.id], ok=((e.status==='available' && !conflicts.length) || isSel) && !ownedBy;
+      const reason=ownedBy?'이미 세트 구성품으로 선택됨':(e.status!=='available'?`상태: ${(typeof statusText==='function'?statusText(e.status):e.status)}`:(conflicts[0]?`예약 불가능 (${conflicts[0].startDate} ${conflicts[0].startTime}~${conflicts[0].endDate} ${conflicts[0].endTime} ${(typeof customerName==='function'?customerName(conflicts[0].customerId):'')} 대여중)`:'예약 가능'));
+      return `<label class="instance ${ok?'':'disabled'}"><input type="checkbox" ${isSel?'checked':''} ${ok?'':'disabled'} onchange="toggleChooser('${H(e.id)}',this.checked)"><div><div class="main">${H(e.serial||e.name)}</div><div class="sub">${H(e.name)} · ${H(reason)}</div></div></label>`;
+    }).join('')||'<div class="empty">모델을 선택하세요</div>';
+    try{renderChooserSummary()}catch(_){}
+  };
+  try{renderChooser=window.renderChooser}catch(_){}
+
+  window.toggleChooser=function(id,checked){
+    const list=selected(); const owners=componentOwnerMap();
+    if(checked && owners[id]){alert('이미 세트 구성품으로 선택된 장비입니다. 먼저 해당 세트 구성에서 해제해 주세요.'); return window.renderChooser();}
+    setSelected(checked?[...list,id]:list.filter(x=>x!==id));
+    normalizeSetStore(); try{renderSelectedEquipments()}catch(_){} try{updateBookingPreview()}catch(_){} try{renderChooser()}catch(_){};
+  };
+
+  // 세트 구성 선택 모달: 단품/다른 세트와 중복 선택 방지
+  window.openSetComponentSelector=function(setId){
+    const setE=getEq(setId); if(!setE) return alert('세트 장비를 찾을 수 없습니다.');
+    normalizeSetStore();
+    if(!$('fhkSetPickModal')) document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" id="fhkSetPickModal"><div class="modal large"><div class="modal-header"><h3 id="fhkSetPickTitle">세트 구성 선택</h3><button class="close" onclick="closeModal('fhkSetPickModal')">×</button></div><div class="modal-body"><div class="toolbar"><input id="fhkSetPickSearch" placeholder="구성품 검색" oninput="fhkRenderSetPick()" style="width:260px"><button class="btn btn-secondary btn-sm" onclick="fhkAutoPickSetComponents()">가능 장비 자동선택</button></div><div id="fhkSetPickBody"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('fhkSetPickModal')">취소</button><button class="btn btn-primary" onclick="fhkApplySetComponents()">선택 반영</button></div></div></div>`);
+    window.__editingSetId=setId; $('fhkSetPickTitle').textContent='세트 구성 선택 · '+(setE.name||''); $('fhkSetPickSearch').value=''; window.fhkRenderSetPick(); openModal('fhkSetPickModal');
+  };
+  window.fhkRenderSetPick=function(){
+    const setId=window.__editingSetId, store=normalizeSetStore(), singles=new Set(selected().filter(id=>!isSetId(id))), owners=componentOwnerMap(), q=($('fhkSetPickSearch')?.value||'').toLowerCase();
+    const candidates=(S().equipment||[]).filter(e=>!isSetObj(e) && (!q || ((e.name||'')+(e.serial||'')+(e.category||'')).toLowerCase().includes(q)));
+    const sD=V('bkStartDate'),eD=V('bkEndDate'),sT=V('bkStartTime'),eT=V('bkEndTime'),ignore=V('bkId');
+    $('fhkSetPickBody').innerHTML='<div class="data-wrap"><table><thead><tr><th>선택</th><th>카테고리</th><th>장비</th><th>상태</th></tr></thead><tbody>'+candidates.map(e=>{
+      let conflicts=[]; try{conflicts=typeof conflictBookings==='function'?conflictBookings(e.id,sD,eD,sT,eT,ignore):[]}catch(_){}
+      const checked=(store[setId]||[]).includes(e.id), owned=owners[e.id]&&owners[e.id]!==setId, single=singles.has(e.id);
+      const ok=(e.status==='available'&&!conflicts.length&&!owned&&!single)||checked;
+      const reason=single?'같은 예약에서 단품으로 이미 선택됨':(owned?'다른 세트 구성품으로 이미 선택됨':(e.status!=='available'?'사용불가':(conflicts[0]?'기간 중 다른 예약 있음':'선택 가능')));
+      return `<tr class="${ok?'':'disabled'}"><td><input type="checkbox" data-set-pick="${H(e.id)}" ${checked?'checked':''} ${ok?'':'disabled'}></td><td>${H(e.category||'')}</td><td><b>${H(e.name||'')}</b><br><span class="meta">${H(e.serial||'')}</span></td><td><span class="meta" style="${ok?'':'color:#f87171'}">${H(reason)}</span></td></tr>`;
+    }).join('')+'</tbody></table></div>';
+  };
+  window.fhkAutoPickSetComponents=function(){
+    const setId=window.__editingSetId; if(!setId) return; const store=normalizeSetStore();
+    const already=new Set([...selected().filter(id=>!isSetId(id)), ...Object.entries(store).filter(([sid])=>sid!==setId).flatMap(([,ids])=>ids)]);
+    const sD=V('bkStartDate'),eD=V('bkEndDate'),sT=V('bkStartTime'),eT=V('bkEndTime'),ignore=V('bkId');
+    const first=(S().equipment||[]).find(e=>!isSetObj(e)&&!already.has(e.id)&&e.status==='available'&&!(typeof conflictBookings==='function'&&conflictBookings(e.id,sD,eD,sT,eT,ignore).length));
+    if(first){store[setId]=[first.id]; window.fhkRenderSetPick();}
+  };
+  window.fhkApplySetComponents=function(){
+    const setId=window.__editingSetId; if(!setId) return; const store=normalizeSetStore();
+    store[setId]=Array.from(document.querySelectorAll('[data-set-pick]:checked')).map(i=>i.dataset.setPick);
+    normalizeSetStore(); closeModal('fhkSetPickModal'); try{renderSelectedEquipments()}catch(_){} try{renderChooserSummary()}catch(_){} try{updateBookingPreview()}catch(_){} try{renderChooser()}catch(_){};
+  };
+
+  window.renderChooserSummary=function(){
+    const box=$('chooserSelectedSummary'); if(!box) return; const sel=selected(); if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const store=normalizeSetStore(); const b={equipmentIds:sel,startDate:V('bkStartDate'),startTime:V('bkStartTime'),endDate:V('bkEndDate'),endTime:V('bkEndTime'),studentDiscount:$('bkStudentDiscount')?.checked,kongjuDiscount:$('bkKongjuDiscount')?.checked,vat:$('bkVat')?.checked,discount:Number(V('bkManualDiscount'))||0}; const p=(typeof priceBreakdown==='function')?priceBreakdown(b):{days:1,base:0,contPct:0,cont:0,total:0};
+    box.innerHTML=`<div class="meta" style="margin-bottom:8px">${H(typeof rentalDurationText==='function'?rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime):'')}</div>`+sel.map(id=>{const e=getEq(id)||{}; const comps=(store[id]||[]).map(x=>{const ce=getEq(x);return ce?`${ce.name} ${ce.serial||''}`:x}).join(', '); return `<div class="price-row fhk-summary-row"><button class="mini-x" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button><span class="fhk-summary-name">${H(e.name||'')}<br><small>${H(e.serial||'')}</small>${isSetId(id)?`<br><button class="btn btn-secondary btn-sm" style="margin-top:5px" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button><br><small>${H(comps||'구성 미선택')}</small>`:''}</span><b>${M((e.rate||0)*(p.days||1))}</b></div>`}).join('')+`<div class="price-row"><span>장비 소계</span><b>${M(p.base||0)}</b></div><div class="price-row"><span>회차할인 ${p.contPct||0}%</span><b>- ${M(p.cont||0)}</b></div><div class="price-row total"><span>예상 합계</span><b>${M(p.total||0)}</b></div>`;
+  };
+  try{renderChooserSummary=window.renderChooserSummary}catch(_){}
+  window.renderSelectedEquipments=function(){
+    const box=$('selectedEquipments'); if(!box) return; const sel=selected(); if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const store=normalizeSetStore(); const days=(typeof billDays==='function')?billDays(V('bkStartDate'),V('bkStartTime'),V('bkEndDate'),V('bkEndTime')):1;
+    box.innerHTML='<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>'+sel.map(id=>{const e=getEq(id)||{}; const comps=(store[id]||[]).map(x=>{const ce=getEq(x);return ce?`${ce.name} ${ce.serial||''}`:x}).join(', '); return `<tr><td><b>${H(e.name||'')}</b><br><span class="meta">${H(e.serial||'')}</span>${isSetId(id)?`<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button></div><div class="meta">${H(comps||'구성 미선택')}</div>`:''}</td><td class="num">${M(e.rate||0)}</td><td class="num">${days}일 · ${M((e.rate||0)*days)}</td><td><button class="mini-x" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button></td></tr>`}).join('')+'</tbody></table>';
+  };
+  try{renderSelectedEquipments=window.renderSelectedEquipments}catch(_){}
+  window.filmhkRemoveChooserItem=function(id){ setSelected(selected().filter(x=>x!==id)); const store=setStore(); delete store[id]; Object.keys(store).forEach(sid=>store[sid]=store[sid].filter(x=>x!==id)); normalizeSetStore(); try{renderSelectedEquipments()}catch(_){} try{updateBookingPreview()}catch(_){} try{renderChooser()}catch(_){}; };
+
+  // 장비관리: 모델 카드 우측 점세개 메뉴 + 이동/복사/삭제
+  function modelMenuHTML(m){return `<div class="fhk-model-menu-wrap" onclick="event.stopPropagation()"><button class="fhk-dot" onclick="fhkToggleModelMenu(event,'${H(m)}')">⋮</button><div class="fhk-model-menu" data-model-menu="${H(m)}"><button onclick="fhkMoveModel('${H(m)}')">이동</button><button onclick="fhkCopyModel('${H(m)}')">복사</button><button class="danger" onclick="fhkDeleteModel('${H(m)}')">삭제</button></div></div>`;}
+  window.renderEquipment=function(){
+    try{renderCategoryButtons('eqCategoryButtons',currentEqCat,'setEqCategory')}catch(_){}
+    const q=($('eqSearch')?.value||'').toLowerCase(); let items=(S().equipment||[]).filter(e=>(currentEqCat==='전체'||e.category===currentEqCat)&&(!q||((e.name||'')+(e.serial||'')+(e.note||'')).toLowerCase().includes(q)));
+    const groups={}; items.forEach(e=>(groups[getModel(e)]=groups[getModel(e)]||[]).push(e));
+    const box=$('equipmentContent'); if(!box) return; box.innerHTML=Object.keys(groups).length?`<div class="model-grid">${Object.entries(groups).map(([m,list])=>{const avail=list.filter(e=>e.status==='available').length;return `<div class="model-card fhk-model-card" onclick="showModelInstances('${H(m)}')">${modelMenuHTML(m)}<div class="model-title">${H(m)}</div><div class="model-meta">${H(list[0].category)} · 총 ${list.length}대 · 기본 가능 ${avail}대<br>${M(list[0].rate)}/일</div><div class="meta" style="margin-top:8px">칸을 클릭하면 개별 장비가 열립니다</div></div>`}).join('')}</div>`:'<div class="empty">장비가 없습니다</div>';
+  };
+  try{renderEquipment=window.renderEquipment}catch(_){}
+  window.fhkToggleModelMenu=function(ev,m){ev.preventDefault(); ev.stopPropagation(); document.querySelectorAll('.fhk-model-menu').forEach(x=>{if(x.dataset.modelMenu!==m)x.classList.remove('active')}); document.querySelector(`.fhk-model-menu[data-model-menu="${CSS.escape(m)}"]`)?.classList.toggle('active');};
+  window.fhkMoveModel=function(m){const cats=(S().categories||[]); const to=prompt('이동할 카테고리명을 정확히 입력하세요:\n'+cats.join(', ')); if(!to) return; if(!cats.includes(to)) return alert('존재하지 않는 카테고리입니다. 먼저 카테고리를 추가해 주세요.'); (S().equipment||[]).filter(e=>getModel(e)===m).forEach(e=>e.category=to); saveSt(); renderEquipment();};
+  window.fhkCopyModel=function(m){const list=(S().equipment||[]).filter(e=>getModel(e)===m); if(!list.length) return; if(!confirm(`${m} 모델 ${list.length}개를 복사할까요?`)) return; list.forEach(e=>{const n={...e,id:(typeof uid==='function'?uid('e'):'e_'+Date.now()+Math.random().toString(36).slice(2)),serial:(e.serial||'')+'-COPY'}; S().equipment.push(n);}); saveSt(); renderEquipment();};
+  window.fhkDeleteModel=function(m){const ids=(S().equipment||[]).filter(e=>getModel(e)===m).map(e=>e.id); if(!ids.length) return; if(!confirm(`${m} 모델 ${ids.length}개를 삭제할까요? 예약에서 선택된 내역에서도 제거됩니다.`)) return; S().equipment=(S().equipment||[]).filter(e=>!ids.includes(e.id)); (S().bookings||[]).forEach(b=>b.equipmentIds=(b.equipmentIds||[]).filter(id=>!ids.includes(id))); saveSt(); renderEquipment();};
+
+  // 카테고리 관리 모달: 드래그 정렬
+  function openDragCategoryModal(){
+    if(!$('fhkCategoryDragModal')) document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" id="fhkCategoryDragModal"><div class="modal large"><div class="modal-header"><h3>카테고리 관리</h3><button class="close" onclick="closeModal('fhkCategoryDragModal')">×</button></div><div class="modal-body"><div class="v28-modal-note">왼쪽 손잡이를 드래그해서 장비관리/예약 선택창의 카테고리 순서를 바꿀 수 있습니다.</div><div id="fhkCategoryDragBody"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('fhkCategoryDragModal')">닫기</button></div></div></div>`);
+    renderDragCategoryBody(); openModal('fhkCategoryDragModal');
+  }
+  function renderDragCategoryBody(){const cats=S().categories||[]; $('fhkCategoryDragBody').innerHTML='<div class="data-wrap"><table><thead><tr><th></th><th>카테고리</th><th>유형</th><th>장비 수</th></tr></thead><tbody>'+cats.map((cat,i)=>`<tr draggable="true" data-cat="${H(cat)}" ondragstart="fhkCatDragStart(event)" ondragover="fhkCatDragOver(event)" ondrop="fhkCatDrop(event)"><td class="fhk-drag-handle">↕</td><td><b>${H(cat)}</b></td><td><select onchange="fhkSetCatType('${H(cat)}',this.value)"><option value="single" ${catType(cat)==='single'?'selected':''}>단품</option><option value="set" ${catType(cat)==='set'?'selected':''}>세트</option></select></td><td>${(S().equipment||[]).filter(e=>e.category===cat).length}</td></tr>`).join('')+'</tbody></table></div>';}
+  window.fhkCatDragStart=ev=>{ev.dataTransfer.setData('text/plain',ev.currentTarget.dataset.cat);};
+  window.fhkCatDragOver=ev=>ev.preventDefault();
+  window.fhkCatDrop=ev=>{ev.preventDefault(); const from=ev.dataTransfer.getData('text/plain'), to=ev.currentTarget.dataset.cat; const cats=S().categories||[]; const a=cats.indexOf(from), b=cats.indexOf(to); if(a<0||b<0||a===b) return; const [x]=cats.splice(a,1); cats.splice(b,0,x); saveSt(); renderDragCategoryBody(); try{renderEquipment();renderChooser()}catch(_){};};
+  window.fhkSetCatType=function(cat,type){S().categoryMeta=S().categoryMeta||{}; S().categoryMeta[cat]={type}; saveSt(); renderDragCategoryBody(); try{renderEquipment();renderChooser()}catch(_){};};
+  document.addEventListener('click',function(ev){ if(ev.target && ev.target.id==='v28ManageCategoryBtn'){ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); openDragCategoryModal();}},true);
+
+  const css=document.createElement('style'); css.textContent=`
+    .fhk-model-card{position:relative}.fhk-model-menu-wrap{position:absolute;right:8px;top:8px;z-index:5}.fhk-dot{background:#111827;border:1px solid #374151;color:#fff;border-radius:8px;width:28px;height:28px;cursor:pointer;font-size:18px}.fhk-model-menu{display:none;position:absolute;right:0;top:32px;background:#111318;border:1px solid #3b3f4a;border-radius:9px;overflow:hidden;min-width:105px;box-shadow:0 10px 30px rgba(0,0,0,.35)}.fhk-model-menu.active{display:block}.fhk-model-menu button{display:block;width:100%;background:transparent;border:0;color:#e5e7eb;text-align:left;padding:9px 12px;cursor:pointer}.fhk-model-menu button:hover{background:#2a2d35}.fhk-model-menu button.danger{color:#fca5a5}.fhk-drag-handle{cursor:grab;color:#9ca3af;font-weight:900}.fhk-summary-row{align-items:flex-start;gap:8px}.fhk-summary-name{flex:1;min-width:0}.mini-x{border:0;background:#3a2024;color:#fca5a5;border-radius:999px;width:20px;height:20px;line-height:20px;cursor:pointer;font-weight:900;text-align:center}.mini-x:hover{background:#7f1d1d;color:#fff}tr.disabled{opacity:.45}`; document.head.appendChild(css);
+  document.addEventListener('click',ev=>{if(!ev.target.closest('.fhk-model-menu-wrap')) document.querySelectorAll('.fhk-model-menu').forEach(x=>x.classList.remove('active'));});
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{bump(); try{renderEquipment()}catch(_){}}); else {bump(); try{renderEquipment()}catch(_){}};
+})();
+</script>
+
+
+
+<!-- FILM HK RENTAL v61: restore saved set-component rules in booking chooser -->
+<script>
+(function(){
+  const VERSION='v61';
+  const $=id=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=v=>(typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const M=n=>(typeof fmt==='function'?fmt(n):(Number(n)||0).toLocaleString('ko-KR')+'원');
+  const V=id=>$(id)?.value||'';
+  const getEq=id=>(S().equipment||[]).find(e=>e.id===id);
+  const modelOf=id=>(getEq(id)?.name||'');
+  const isSetEqObj=e=>!!e && ((S().categoryMeta?.[e.category]?.type)==='set' || /FULL\s*SET|\bSET\b|세트|패키지/i.test((e.name||'')+' '+(e.category||'')));
+  const isSetId=id=>isSetEqObj(getEq(id));
+  const selected=()=>{try{return window.chooserSelection||chooserSelection||[]}catch(_){return window.chooserSelection||[]}};
+  const setSelected=a=>{window.chooserSelection=[...new Set(a||[])]; try{chooserSelection=window.chooserSelection}catch(_){}};
+  const store=()=>{window.__filmhkSetComponentGroups=window.__filmhkSetComponentGroups||{}; return window.__filmhkSetComponentGroups;};
+  const keyOf=(r,i)=>String(r.key||r.name||('구성조건 '+(i+1)));
+  function setReqs(setId){
+    const e=getEq(setId)||{};
+    const list=(S().setComponents&&S().setComponents[e.name])||[];
+    return list.map((r,i)=>({
+      key:keyOf(r,i), name:String(r.name||('구성조건 '+(i+1))), required:Math.max(1,Number(r.required)||1), owned:Number(r.owned)||0, note:r.note||'',
+      ids:[...(r.equipmentIds||r.ids||r.selectedIds||r.candidateIds||[])]
+    }));
+  }
+  function flatGroups(g=store()){
+    const out={};
+    Object.entries(g||{}).forEach(([sid,grp])=>{out[sid]=Array.from(new Set(Object.values(grp||{}).flat().filter(Boolean)));});
+    return out;
+  }
+  function syncLegacyFlat(){
+    const flat=flatGroups();
+    window.currentBookingSetComponents={};
+    Object.entries(flat).forEach(([sid,ids])=>window.currentBookingSetComponents[sid]=ids.slice());
+    return flat;
+  }
+  function usedByOtherSets(setId){
+    const used=new Map();
+    Object.entries(flatGroups()).forEach(([sid,ids])=>{ if(sid!==setId) ids.forEach(id=>used.set(id,sid)); });
+    return used;
+  }
+  function selectedSingles(){return new Set(selected().filter(id=>!isSetId(id)));}
+  function words(s){return String(s||'').toLowerCase().replace(/[()[\]{}+*·,\/\\_\-]/g,' ').split(/\s+/).filter(w=>w.length>=2&&!['set','full','세트','장비','구성','선택','기본'].includes(w));}
+  function candidateScore(e,req){
+    const hay=((e.name||'')+' '+(e.category||'')+' '+(e.serial||'')+' '+(e.note||'')+' '+(e.location||'')).toLowerCase();
+    let score=0; words(req.name+' '+req.note).forEach(w=>{if(hay.includes(w))score+=3;});
+    const n=(req.name||'').toLowerCase(), cat=(e.category||'').toLowerCase();
+    if(n.includes('모니터')&&cat.includes('모니터'))score+=10;
+    if((n.includes('메모리')||n.includes('media')||n.includes('1tb')||n.includes('카드'))&&/메모리|media|card|cf|sd|1tb/i.test(hay))score+=10;
+    if((n.includes('트라이')||n.includes('삼각')||n.includes('하이헷')||n.includes('베이비'))&&/그립|스탠드|tripod|hi|baby|트라이|하이헷|베이비/i.test(hay))score+=10;
+    if(n.includes('배터')&&/배터|v마운트|v-mount|v mount|battery/i.test(hay))score+=10;
+    if(n.includes('송수신')&&/송수신|cineview|accsoon|teradek|무선/i.test(hay))score+=10;
+    if(n.includes('팔로')&&/nucleus|focus|팔로|포커스/i.test(hay))score+=10;
+    if(n.includes('매트')&&/matte|매트|mb-/i.test(hay))score+=10;
+    if(n.includes('본체')&&/body|본체|fx|komodo|red|sony/i.test(hay))score+=5;
+    return score;
+  }
+  function candidatesForReq(req,setId){
+    const all=(S().equipment||[]).filter(e=>e.id!==setId && !isSetEqObj(e));
+    if(req.ids&&req.ids.length){
+      const byId=Object.fromEntries(all.map(e=>[e.id,e]));
+      return req.ids.map(id=>byId[id]).filter(Boolean);
+    }
+    return all.map(e=>({e,score:candidateScore(e,req)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||String(a.e.serial||a.e.name).localeCompare(String(b.e.serial||b.e.name),'ko',{numeric:true})).map(x=>x.e);
+  }
+  function conflicts(e){try{return typeof conflictBookings==='function'?conflictBookings(e.id,V('bkStartDate'),V('bkEndDate'),V('bkStartTime'),V('bkEndTime'),V('bkId')):[]}catch(_){return[]}}
+  function canUse(e,setId,checked){
+    const singles=selectedSingles(), other=usedByOtherSets(setId);
+    if(checked) return {ok:true,text:'선택됨'};
+    if(singles.has(e.id)) return {ok:false,text:'같은 예약에서 단품으로 이미 선택됨'};
+    if(other.has(e.id)) return {ok:false,text:'다른 세트 구성품으로 이미 선택됨'};
+    const cs=conflicts(e);
+    if(e.status!=='available') return {ok:false,text:'상태: '+(typeof statusText==='function'?statusText(e.status):e.status)};
+    if(cs.length) return {ok:false,text:`기간 중 다른 예약 있음 (${cs[0].startDate}~${cs[0].endDate})`};
+    return {ok:true,text:'선택 가능'};
+  }
+  function ensureSetGroupsFromBooking(id){
+    const b=id?(S().bookings||[]).find(x=>x.id===id):null;
+    if(b?.setComponentGroups){window.__filmhkSetComponentGroups=JSON.parse(JSON.stringify(b.setComponentGroups||{})); syncLegacyFlat(); return;}
+    if(b?.setComponents){
+      window.__filmhkSetComponentGroups={};
+      Object.entries(b.setComponents||{}).forEach(([sid,ids])=>{window.__filmhkSetComponentGroups[sid]={_selected:(ids||[]).slice()};});
+      syncLegacyFlat(); return;
+    }
+    window.__filmhkSetComponentGroups={}; window.currentBookingSetComponents={};
+  }
+  function autoPickForSet(setId){
+    const g=store(); g[setId]=g[setId]||{};
+    const reqs=setReqs(setId), singles=selectedSingles();
+    const already=()=>new Set([...singles, ...Object.entries(flatGroups(g)).filter(([sid])=>sid!==setId).flatMap(([,ids])=>ids), ...Object.values(g[setId]||{}).flat()]);
+    reqs.forEach(req=>{
+      const cur=(g[setId][req.key]||[]).slice(0,req.required);
+      g[setId][req.key]=cur;
+      const need=req.required-cur.length; if(need<=0)return;
+      const used=already();
+      const picks=candidatesForReq(req,setId).filter(e=>!used.has(e.id)&&canUse(e,setId,false).ok).slice(0,need).map(e=>e.id);
+      g[setId][req.key]=[...cur,...picks];
+    });
+    syncLegacyFlat();
+  }
+  const prevOpenBooking=window.openBookingModal;
+  window.openBookingModal=function(id='',presetDate=''){
+    const r=prevOpenBooking?prevOpenBooking.apply(this,arguments):undefined;
+    setTimeout(()=>{ensureSetGroupsFromBooking(id); try{renderSelectedEquipments();renderChooserSummary();updateBookingPreview();}catch(e){}},0);
+    return r;
+  };
+  try{openBookingModal=window.openBookingModal}catch(_){ }
+
+  const prevToggle=window.toggleChooser;
+  window.toggleChooser=function(id,checked){
+    if(checked){
+      const flat=flatGroups(); const owner=Object.entries(flat).find(([sid,ids])=>ids.includes(id));
+      if(owner){alert('이미 세트 구성품으로 선택된 장비입니다. 먼저 해당 세트 구성에서 해제해 주세요.'); return window.renderChooser&&window.renderChooser();}
+    }
+    if(prevToggle) prevToggle.apply(this,arguments); else setSelected(checked?[...selected(),id]:selected().filter(x=>x!==id));
+    if(checked&&isSetId(id)) autoPickForSet(id);
+    if(!checked){delete store()[id]; syncLegacyFlat();}
+    try{renderSelectedEquipments();renderChooserSummary();updateBookingPreview();renderChooser();}catch(e){}
+  };
+
+  window.openSetComponentSelector=function(setId){
+    const setE=getEq(setId); if(!setE) return alert('세트 장비를 찾을 수 없습니다.');
+    const reqs=setReqs(setId);
+    if(!$('setComponentModal')) document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" id="setComponentModal"><div class="modal large"><div class="modal-header"><h3>세트 구성품 선택</h3><button class="close" onclick="closeModal('setComponentModal')">×</button></div><div class="modal-body"><div class="toolbar"><span class="meta" id="setComponentTitle"></span><button class="btn btn-secondary btn-sm" onclick="filmhkAutoPickSetComponents()">자동 추천</button></div><div id="setComponentBody"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('setComponentModal')">닫기</button><button class="btn btn-primary" onclick="filmhkApplySetComponents()">구성 반영</button></div></div></div>`);
+    window.__editingSetId=setId; store()[setId]=store()[setId]||{};
+    const title=$('setComponentTitle'); if(title) title.textContent=`${setE.name} 구성품 · 저장된 세트구성 기준`;
+    const body=$('setComponentBody');
+    if(!reqs.length){body.innerHTML='<div class="empty">이 세트에 저장된 세트 구성조건이 없습니다. 장비관리에서 해당 세트 모델을 열고 세트 구성품을 먼저 등록해 주세요.</div>'; openModal('setComponentModal'); return;}
+    body.innerHTML=reqs.map(req=>{
+      const cur=new Set((store()[setId]&&store()[setId][req.key])||[]);
+      const cand=candidatesForReq(req,setId);
+      const rows=cand.map(e=>{const checked=cur.has(e.id); const c=canUse(e,setId,checked); return `<label class="instance ${c.ok?'':'disabled'}"><input type="checkbox" ${checked?'checked':''} ${c.ok?'':'disabled'} data-set-id="${H(setId)}" data-req-key="${H(req.key)}" data-set-component="${H(e.id)}"><div><div class="main">${H(e.name)} ${H(e.serial||'')}</div><div class="sub">${H(e.category||'')} · ${H(c.text)}</div></div></label>`;}).join('') || '<div class="empty" style="padding:16px">이 구성조건과 매칭되는 등록 장비가 없습니다.</div>';
+      const cnt=cur.size;
+      return `<div class="card" style="margin-bottom:10px"><h4>${H(req.name)} <small class="meta">필요 ${req.required}개 · 현재 ${cnt}개</small></h4>${req.note?`<div class="meta" style="margin-bottom:8px">${H(req.note)}</div>`:''}${rows}</div>`;
+    }).join('');
+    openModal('setComponentModal');
+  };
+  window.filmhkAutoPickSetComponents=function(){const setId=window.__editingSetId; if(!setId)return; autoPickForSet(setId); window.openSetComponentSelector(setId);};
+  window.filmhkApplySetComponents=function(){
+    const setId=window.__editingSetId; if(!setId) return closeModal('setComponentModal');
+    const g=store(); g[setId]={};
+    document.querySelectorAll('#setComponentModal [data-set-component]:checked').forEach(i=>{const k=i.dataset.reqKey||'_selected'; g[setId][k]=g[setId][k]||[]; g[setId][k].push(i.dataset.setComponent);});
+    syncLegacyFlat(); closeModal('setComponentModal');
+    try{renderSelectedEquipments();renderChooserSummary();updateBookingPreview();renderChooser();}catch(e){}
+  };
+  function compText(setId){return (flatGroups()[setId]||[]).map(id=>{const e=getEq(id);return e?`${e.name} ${e.serial||''}`:id}).join(', ');}
+  const prevRenderSelected=window.renderSelectedEquipments;
+  window.renderSelectedEquipments=function(){
+    const box=$('selectedEquipments'); if(!box) return prevRenderSelected&&prevRenderSelected.apply(this,arguments);
+    const sel=selected(); if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    syncLegacyFlat(); const days=(typeof billDays==='function')?billDays(V('bkStartDate'),V('bkStartTime'),V('bkEndDate'),V('bkEndTime')):1;
+    box.innerHTML='<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>'+sel.map(id=>{const e=getEq(id)||{};return `<tr><td><b>${H(e.name||'')}</b><br><span class="meta">${H(e.serial||'')}</span>${isSetId(id)?`<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button></div><div class="meta">${H(compText(id)||'구성 미선택')}</div>`:''}</td><td class="num">${M(e.rate||0)}</td><td class="num">${days}일 · ${M((e.rate||0)*days)}</td><td><button class="mini-x" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button></td></tr>`}).join('')+'</tbody></table>';
+  };
+  try{renderSelectedEquipments=window.renderSelectedEquipments}catch(_){ }
+  const prevSummary=window.renderChooserSummary;
+  window.renderChooserSummary=function(){
+    const box=$('chooserSelectedSummary'); if(!box) return prevSummary&&prevSummary.apply(this,arguments);
+    const sel=selected(); if(!sel.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    syncLegacyFlat(); const b={equipmentIds:sel,startDate:V('bkStartDate'),startTime:V('bkStartTime'),endDate:V('bkEndDate'),endTime:V('bkEndTime'),studentDiscount:$('bkStudentDiscount')?.checked,kongjuDiscount:$('bkKongjuDiscount')?.checked,vat:$('bkVat')?.checked,discount:Number(V('bkManualDiscount'))||0}; const p=(typeof priceBreakdown==='function')?priceBreakdown(b):{days:1,base:0,contPct:0,cont:0,total:0};
+    box.innerHTML=`<div class="meta" style="margin-bottom:8px">${H(typeof rentalDurationText==='function'?rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime):'')}</div>`+sel.map(id=>{const e=getEq(id)||{};return `<div class="price-row fhk-summary-row"><button class="mini-x" onclick="filmhkRemoveChooserItem('${H(id)}')">×</button><span class="fhk-summary-name">${H(e.name||'')}<br><small>${H(e.serial||'')}</small>${isSetId(id)?`<br><button class="btn btn-secondary btn-sm" style="margin-top:5px" onclick="openSetComponentSelector('${H(id)}')">세트 구성 선택</button><br><small>${H(compText(id)||'구성 미선택')}</small>`:''}</span><b>${M((e.rate||0)*(p.days||1))}</b></div>`}).join('')+`<div class="price-row"><span>장비 소계</span><b>${M(p.base||0)}</b></div><div class="price-row"><span>회차할인 ${p.contPct||0}%</span><b>- ${M(p.cont||0)}</b></div><div class="price-row total"><span>예상 합계</span><b>${M(p.total||0)}</b></div>`;
+  };
+  try{renderChooserSummary=window.renderChooserSummary}catch(_){ }
+  const prevRemove=window.filmhkRemoveChooserItem;
+  window.filmhkRemoveChooserItem=function(id){
+    setSelected(selected().filter(x=>x!==id));
+    const g=store(); delete g[id]; Object.keys(g).forEach(sid=>Object.keys(g[sid]||{}).forEach(k=>g[sid][k]=g[sid][k].filter(x=>x!==id)));
+    syncLegacyFlat(); try{renderSelectedEquipments();renderChooserSummary();updateBookingPreview();renderChooser();}catch(e){}
+  };
+  const prevSave=window.saveBooking;
+  window.saveBooking=function(){syncLegacyFlat(); return prevSave?prevSave.apply(this,arguments):undefined;};
+  try{saveBooking=window.saveBooking}catch(_){ }
+  function bump(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bump);else bump();
+})();
+</script>
+
+
+
+<!-- FILM HK RENTAL v62: new-booking reset + exact set component quantities -->
+<script>
+(function(){
+  'use strict';
+  const VERSION='v62';
+  const $=id=>document.getElementById(id);
+  const S=()=>window.state||state;
+  const H=v=>(typeof esc==='function'?esc(v??''):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const V=id=>$(id)?.value||'';
+  const clone=o=>JSON.parse(JSON.stringify(o||{}));
+  const getEq=id=>(S().equipment||[]).find(e=>e.id===id);
+  const selected=()=>{try{return window.chooserSelection||chooserSelection||[]}catch(_){return window.chooserSelection||[]}};
+  const setSelected=a=>{window.chooserSelection=[...new Set(a||[])]; try{chooserSelection=window.chooserSelection}catch(_){}};
+  const isSetId=id=>{const e=getEq(id)||{}; return ((S().categoryMeta?.[e.category]?.type)==='set') || /세트|SET|FULL|패키지/i.test((e.category||'')+' '+(e.name||''));};
+  const modelName=id=>getEq(id)?.name||'';
+  function reqKey(r,i){return String(r.key||r.name||('구성조건 '+(i+1)));}
+  function setReqs(setId){
+    const list=(S().setComponents&&S().setComponents[modelName(setId)])||[];
+    return list.map((r,i)=>({key:reqKey(r,i),name:String(r.name||('구성조건 '+(i+1))),required:Math.max(1,Number(r.required)||Number(r.qty)||Number(r.count)||1),note:r.note||''}));
+  }
+  function groups(){window.__filmhkSetComponentGroups=window.__filmhkSetComponentGroups||{}; return window.__filmhkSetComponentGroups;}
+  function flatGroups(g=groups()){
+    const out={};
+    Object.entries(g||{}).forEach(([sid,obj])=>{out[sid]=[...new Set(Object.values(obj||{}).flat())];});
+    return out;
+  }
+  function syncLegacy(){window.currentBookingSetComponents=flatGroups();}
+  function getReq(setId,key){return setReqs(setId).find(r=>r.key===key)||null;}
+  function shortageDetails(){
+    const out=[];
+    selected().filter(isSetId).forEach(setId=>{
+      const g=groups()[setId]||{};
+      setReqs(setId).forEach(req=>{
+        const cnt=(g[req.key]||[]).length;
+        if(cnt<req.required) out.push(`${modelName(setId)} / ${req.name}: ${cnt}/${req.required}`);
+      });
+    });
+    return out;
+  }
+  function trimOverflow(){
+    selected().filter(isSetId).forEach(setId=>{
+      const g=groups()[setId]||{};
+      setReqs(setId).forEach(req=>{
+        if((g[req.key]||[]).length>req.required) g[req.key]=g[req.key].slice(0,req.required);
+      });
+    });
+    syncLegacy();
+  }
+  function clearNewBookingSelection(){
+    setSelected([]);
+    window.__filmhkSetComponentGroups={};
+    window.currentBookingSetComponents={};
+    try{renderSelectedEquipments()}catch(_){ }
+    try{renderChooserSummary()}catch(_){ }
+    try{updateBookingPreview()}catch(_){ }
+  }
+
+  // 새 예약 등록을 열 때 이전 예약/선택창의 장비 선택값이 남지 않도록 강제 초기화
+  const prevOpenBookingModal=window.openBookingModal;
+  window.openBookingModal=function(id='',presetDate=''){
+    const isNew=!id;
+    const r=prevOpenBookingModal?prevOpenBookingModal.apply(this,arguments):undefined;
+    if(isNew){
+      clearNewBookingSelection();
+      setTimeout(clearNewBookingSelection,0);
+      setTimeout(clearNewBookingSelection,80);
+    }
+    return r;
+  };
+  try{openBookingModal=window.openBookingModal}catch(_){ }
+
+  // 세트 구성품 체크 시 항목별 필수 수량 이상 선택하지 못하게 차단
+  document.addEventListener('change',function(ev){
+    const input=ev.target.closest && ev.target.closest('#setComponentModal [data-set-component]');
+    if(!input) return;
+    const setId=input.dataset.setId, key=input.dataset.reqKey;
+    const req=getReq(setId,key); if(!req) return;
+    const checked=[...document.querySelectorAll(`#setComponentModal [data-set-id="${CSS.escape(setId)}"][data-req-key="${CSS.escape(key)}"]:checked`)];
+    if(checked.length>req.required){
+      input.checked=false;
+      alert(`${req.name}은(는) ${req.required}개까지만 선택할 수 있습니다.`);
+    }
+  },true);
+
+  const prevApply=window.filmhkApplySetComponents;
+  window.filmhkApplySetComponents=function(){
+    const setId=window.__editingSetId;
+    if(setId){
+      const tooMany=[];
+      setReqs(setId).forEach(req=>{
+        const checked=[...document.querySelectorAll(`#setComponentModal [data-set-id="${CSS.escape(setId)}"][data-req-key="${CSS.escape(req.key)}"]:checked`)];
+        if(checked.length>req.required){
+          checked.slice(req.required).forEach(i=>i.checked=false);
+          tooMany.push(`${req.name}: ${checked.length}/${req.required}`);
+        }
+      });
+      if(tooMany.length) alert('필수 수량보다 많이 선택된 항목은 자동으로 제외했습니다.\n\n'+tooMany.join('\n'));
+    }
+    const r=prevApply?prevApply.apply(this,arguments):undefined;
+    trimOverflow();
+    try{renderSelectedEquipments();renderChooserSummary();updateBookingPreview();renderChooser();}catch(_){ }
+    return r;
+  };
+
+  // 저장 직전: 부족하면 확인창, 저장은 허용하되 예약 데이터에 세트장비 부족 표기 저장
+  const prevSaveBooking=window.saveBooking;
+  window.saveBooking=function(){
+    trimOverflow();
+    const missing=shortageDetails();
+    window.__filmhkPendingSetShortage={shortage:false,details:[]};
+    if(missing.length){
+      const ok=confirm('세트 구성품이 필수 수량만큼 선택되지 않았습니다.\n\n'+missing.join('\n')+'\n\n그래도 예약을 저장할까요? 저장하면 예약 목록에 “세트장비 부족”으로 표기됩니다.');
+      if(!ok) return;
+      window.__filmhkPendingSetShortage={shortage:true,details:missing};
+    }
+    const beforeIds=new Set((S().bookings||[]).map(b=>b.id));
+    const editId=V('bkId');
+    const result=prevSaveBooking?prevSaveBooking.apply(this,arguments):undefined;
+    setTimeout(()=>{
+      const st=S();
+      let b=editId?(st.bookings||[]).find(x=>x.id===editId):null;
+      if(!b) b=(st.bookings||[]).slice().reverse().find(x=>!beforeIds.has(x.id));
+      if(b){
+        b.setShortage=!!window.__filmhkPendingSetShortage?.shortage;
+        b.setShortageDetails=window.__filmhkPendingSetShortage?.details||[];
+        b.setComponentGroups=clone(groups());
+        b.setComponents=flatGroups();
+        if(b.setShortage && !String(b.note||'').includes('[세트장비 부족]')) b.note=(b.note?b.note+'\n':'')+'[세트장비 부족] '+b.setShortageDetails.join(' / ');
+        try{ if(typeof save==='function') save(); }catch(_){ }
+        try{ if(typeof filmhkSaveNow==='function') filmhkSaveNow(); }catch(_){ }
+        try{renderBookings();renderDashboard();renderCalendar();renderQuotes();}catch(_){ }
+      }
+      window.__filmhkPendingSetShortage=null;
+    },80);
+    return result;
+  };
+  try{saveBooking=window.saveBooking}catch(_){ }
+
+  // 예약 목록 렌더 후 부족 배지를 안정적으로 덧붙임
+  const prevRenderBookings=window.renderBookings;
+  window.renderBookings=function(){
+    if(prevRenderBookings) prevRenderBookings.apply(this,arguments);
+    const root=$('bookingsTable'); if(!root) return;
+    const rows=[...root.querySelectorAll('tbody tr')];
+    rows.forEach(tr=>{
+      const txt=tr.textContent||'';
+      const b=(S().bookings||[]).find(x=>x.setShortage && txt.includes((typeof customerName==='function'?customerName(x.customerId):'')) && txt.includes(x.startDate||''));
+      if(b && !tr.innerHTML.includes('세트장비 부족')){
+        const cells=tr.querySelectorAll('td');
+        const target=cells[6]||cells[cells.length-2]||cells[cells.length-1];
+        if(target) target.innerHTML += '<br><span class="badge warn">세트장비 부족</span>';
+      }
+    });
+  };
+  try{renderBookings=window.renderBookings}catch(_){ }
+
+  function bump(){document.title='FILM HK RENTAL 관리자 '+VERSION; const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>{bump();try{renderBookings()}catch(_){}}); else {bump();try{renderBookings()}catch(_){}};
+})();
+</script>
+
 </body></html>
