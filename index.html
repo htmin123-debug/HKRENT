@@ -2433,7 +2433,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   const price = (b)=> { try{return priceBreakdown(b)}catch(e){return {days:1,contPct:0,total:0}} };
 
   function setVersion(){
-    document.title = 'FILM HK RENTAL 관리자 v19';
+    document.title = 'FILM HK RENTAL 관리자 v51';
     const h1=document.querySelector('header h1');
     if(h1) h1.textContent='FILM HK RENTAL · 관리자 v39';
   }
@@ -3547,7 +3547,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   try{
     addStyle(); ensureData();
-    document.title='FILM HK RENTAL 관리자 v36';
+    document.title='FILM HK RENTAL 관리자 v51';
     const h1=document.querySelector('header h1'); if(h1) h1.textContent='FILM HK RENTAL · 관리자 v49';
     if(typeof renderEquipment==='function') renderEquipment();
   }catch(e){ console.warn('[v31 init]',e); }
@@ -3691,7 +3691,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   try{renderChooser=window.renderChooser;}catch(e){}
   cleanupAltGroups();
   try{
-    document.title='FILM HK RENTAL 관리자 v36';
+    document.title='FILM HK RENTAL 관리자 v51';
     const h1=document.querySelector('header h1'); if(h1) h1.textContent='FILM HK RENTAL · 관리자 v49';
     if(typeof renderEquipment==='function') renderEquipment();
   }catch(e){console.warn('[v32 cleanup]',e)}
@@ -3699,321 +3699,305 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 </script>
 
 
-<!-- Supabase 연결: FILM HK RENTAL DATA -->
 
-<!-- FILM HK v50: equipment/booking sync + refresh + panel preserve -->
+
+<!-- FILM HK RENTAL v51: Supabase authoritative storage + safe sync + set component selector -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function(){
-  const VERSION = 'v50';
-  const CLOUD_STATE_ID = 'filmhk-main-state-v1';
-  const SUPABASE_URL = 'https://bnyjrobeiiqgavhgiimx.supabase.co';
-  const SUPABASE_KEY = 'sb_publishable_CGDh6TxaWKvUjx4inv2LmA_BK4cWR_W';
-  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  window.filmhkSupabase = client;
-  let cloudReady = false;
-  let loadingCloud = false;
-  let savingCloud = false;
-  let lastUpdatedAt = null;
-  let ignoreRemoteUntil = 0;
-  let channel = null;
+  const VERSION='v51';
+  const CLOUD_STATE_ID='filmhk-main-state-v1';
+  const SUPABASE_URL='https://bnyjrobeiiqgavhgiimx.supabase.co';
+  const SUPABASE_KEY='sb_publishable_CGDh6TxaWKvUjx4inv2LmA_BK4cWR_W';
+  const client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  window.supabase=client;
+  window.filmhkSupabase=client;
 
-  function activePanel(){ return document.querySelector('.panel.active')?.id || 'dashboard'; }
-  function modalOpen(){ return !!document.querySelector('.modal-bg.active'); }
-  function cloneState(){ return JSON.parse(JSON.stringify(state || seed())); }
-  function normalizeState(s){ return (typeof migrate === 'function') ? migrate(s || seed()) : (s || seed()); }
-  function log(){ console.log.apply(console, ['[FILM HK '+VERSION+']'].concat([].slice.call(arguments))); }
-  function err(){ console.error.apply(console, ['[FILM HK '+VERSION+']'].concat([].slice.call(arguments))); }
-  function notice(msg, type='info'){
-    let el=document.getElementById('filmhkCloudNotice');
-    if(!el){
-      el=document.createElement('div');
-      el.id='filmhkCloudNotice';
-      el.style.cssText='position:fixed;right:16px;bottom:16px;z-index:99999;padding:9px 12px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #374151;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';
-      document.body.appendChild(el);
-    }
-    el.style.borderColor = type==='error' ? '#ef4444' : type==='success' ? '#22c55e' : '#374151';
-    el.textContent = msg;
-    clearTimeout(notice._t);
-    notice._t=setTimeout(()=>{ try{el.remove()}catch(e){} }, type==='error'?7000:1800);
+  let cloudLoaded=false;
+  let cloudLoading=false;
+  let cloudSaving=false;
+  let lastRemoteUpdatedAt=null;
+  let lastSavedHash='';
+  let lastSeenHash='';
+  let saveTimer=null;
+  let currentBookingSetComponents={};
+
+  function activePanel(){return document.querySelector('.panel.active')?.id||'dashboard'}
+  function modalOpen(){return !!document.querySelector('.modal-bg.active')}
+  function clone(o){return JSON.parse(JSON.stringify(o||{}))}
+  function cloneState(){return clone(state||seed())}
+  function normalizeState(s){
+    s=(typeof migrate==='function')?migrate(s||seed()):(s||seed());
+    s.equipment=s.equipment||[]; s.customers=s.customers||[]; s.bookings=s.bookings||[];
+    s.bookings.forEach(b=>{ b.setComponents=b.setComponents||{}; });
+    return s;
   }
+  function stateHash(obj){try{return JSON.stringify(obj||state)}catch(e){return String(Date.now())}}
+  function notify(msg,type='info'){
+    let el=document.getElementById('filmhkCloudNotice');
+    if(!el){el=document.createElement('div');el.id='filmhkCloudNotice';el.style.cssText='position:fixed;right:16px;bottom:16px;z-index:99999;padding:9px 12px;border-radius:8px;background:#111827;color:#e5e7eb;border:1px solid #374151;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-width:360px;';document.body.appendChild(el)}
+    el.style.borderColor=type==='error'?'#ef4444':type==='success'?'#22c55e':'#374151';
+    el.textContent=msg; clearTimeout(notify._t); notify._t=setTimeout(()=>{try{el.remove()}catch(e){}}, type==='error'?7000:1800);
+  }
+  async function getUser(){const {data,error}=await client.auth.getSession(); if(error) throw error; return data?.session?.user||null;}
   function renderCurrent(){
     try{
       const p=activePanel();
       if(typeof renderDashboard==='function') renderDashboard();
-      if(p==='equipment' && typeof renderEquipment==='function') renderEquipment();
-      if(p==='bookings' && typeof renderBookings==='function') renderBookings();
-      if(p==='calendar' && typeof renderCalendar==='function') renderCalendar();
-      if(p==='customers' && typeof renderCustomers==='function') renderCustomers();
-      if(p==='quotes' && typeof renderQuotes==='function') renderQuotes();
-      if(p==='settings' && typeof renderSettings==='function') renderSettings();
-      if(typeof renderQuotes==='function') renderQuotes();
-    }catch(e){ console.warn('[FILM HK '+VERSION+'] render warning', e); }
+      if(p==='equipment'&&typeof renderEquipment==='function') renderEquipment();
+      if(p==='bookings'&&typeof renderBookings==='function') renderBookings();
+      if(p==='calendar'&&typeof renderCalendar==='function') renderCalendar();
+      if(p==='customers'&&typeof renderCustomers==='function') renderCustomers();
+      if(p==='quotes'&&typeof renderQuotes==='function') renderQuotes();
+      if(p==='settings'&&typeof renderSettings==='function') renderSettings();
+    }catch(e){console.warn('[FILM HK '+VERSION+'] render warning',e)}
   }
-  async function sessionUser(){
-    const {data,error}=await client.auth.getSession();
+  function mergeById(remoteArr=[], localArr=[]){
+    const map=new Map();
+    (remoteArr||[]).forEach(x=>{if(x&&x.id)map.set(x.id,clone(x))});
+    (localArr||[]).forEach(x=>{if(x&&x.id)map.set(x.id,clone(x))});
+    return Array.from(map.values());
+  }
+  function mergeState(remote, local){
+    const r=normalizeState(clone(remote||{}));
+    const l=normalizeState(clone(local||{}));
+    return normalizeState({
+      ...r,
+      ...l,
+      equipment:mergeById(r.equipment,l.equipment),
+      customers:mergeById(r.customers,l.customers),
+      bookings:mergeById(r.bookings,l.bookings),
+      settings:{...(r.settings||{}),...(l.settings||{})},
+      categories:Array.from(new Set([...(r.categories||[]),...(l.categories||[])]))
+    });
+  }
+  async function fetchRemote(){
+    const {data,error}=await client.from('app_state').select('data,updated_at').eq('id',CLOUD_STATE_ID).maybeSingle();
     if(error) throw error;
-    return data?.session?.user || null;
+    return data||null;
   }
-  async function cloudLoad({force=false, silent=false}={}){
-    if(savingCloud && !force) return false;
-    const user = await sessionUser();
-    if(!user) return false;
-    loadingCloud = true;
+  async function cloudLoad(opts={}){
+    const force=!!opts.force, silent=!!opts.silent;
+    if(cloudSaving&&!force) return false;
+    const user=await getUser(); if(!user) return false;
+    cloudLoading=true;
     try{
-      const {data,error}=await client.from('app_state').select('data,updated_at').eq('id',CLOUD_STATE_ID).maybeSingle();
-      if(error) throw error;
-      if(data && data.data){
-        state = normalizeState(data.data);
-        lastUpdatedAt = data.updated_at || null;
-        cloudReady = true;
-        try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+      const row=await fetchRemote();
+      if(row&&row.data){
+        state=normalizeState(row.data);
+        lastRemoteUpdatedAt=row.updated_at||null;
+        lastSavedHash=lastSeenHash=stateHash(state);
+        cloudLoaded=true;
+        try{localStorage.removeItem(STORAGE_KEY)}catch(e){}
         renderCurrent();
-        if(activePanel()==='equipment') renderEquipmentPreserved();
-        if(!silent) notice('Supabase 새로고침 완료','success');
-        log('load complete', lastUpdatedAt);
+        if(!silent) notify('Supabase 데이터 새로고침 완료','success');
         return true;
       }
-      cloudReady = true;
-      await cloudSave('initial upload', {silent:true});
+      // If there is no cloud data, do not overwrite existing data repeatedly. Create only once after login.
+      cloudLoaded=true;
+      state=normalizeState(state||seed());
+      await cloudSave('초기 클라우드 생성',{silent:true,history:false,allowInitial:true});
       return true;
-    }catch(e){
-      err('load failed', e);
-      if(!silent) notice('Supabase 로드 실패: '+(e.message||'콘솔 확인'), 'error');
-      return false;
-    }finally{ loadingCloud=false; }
+    }catch(e){console.error('[FILM HK '+VERSION+'] load failed',e); if(!silent) notify('Supabase 로드 실패: '+(e.message||'콘솔 확인'),'error'); return false;}
+    finally{cloudLoading=false;}
   }
-  async function cloudHistory(reason){
-    try{
-      const user=await sessionUser();
-      if(!user) return;
-      await client.from('app_state_history').insert({state_id:CLOUD_STATE_ID,data:cloneState(),reason:reason||'event',created_by:user.id});
-    }catch(e){ console.warn('[FILM HK '+VERSION+'] history skipped', e?.message||e); }
+  async function saveHistory(reason){
+    try{const user=await getUser(); if(!user) return; await client.from('app_state_history').insert({state_id:CLOUD_STATE_ID,data:cloneState(),reason:reason||'event',created_by:user.id});}catch(e){console.warn('[FILM HK '+VERSION+'] history skipped',e?.message||e)}
   }
-  async function cloudSave(reason='save', {silent=false, history=true}={}){
-    if(loadingCloud) return false;
-    const user = await sessionUser();
-    if(!user){ notice('로그인 세션이 없어 저장하지 못했습니다.', 'error'); return false; }
-    savingCloud = true;
+  async function cloudSave(reason='저장', opts={}){
+    const silent=!!opts.silent, history=opts.history!==false;
+    if(cloudLoading) return false;
+    const user=await getUser();
+    if(!user){ if(!silent) notify('로그인 세션이 없어 저장하지 못했습니다.','error'); return false; }
+    if(!cloudLoaded && !opts.allowInitial){ if(!silent) notify('클라우드 로드 전이라 저장을 보류했습니다. 새로고침하세요.','error'); return false; }
+    cloudSaving=true;
     try{
+      const remote=await fetchRemote();
+      if(remote&&remote.data&&lastRemoteUpdatedAt&&remote.updated_at&&new Date(remote.updated_at)>new Date(lastRemoteUpdatedAt)){
+        state=mergeState(remote.data,state);
+      }
       const payload={id:CLOUD_STATE_ID,data:cloneState(),updated_at:new Date().toISOString(),updated_by:user.id};
       const {error}=await client.from('app_state').upsert(payload,{onConflict:'id'});
       if(error) throw error;
-      lastUpdatedAt = payload.updated_at;
-      cloudReady = true;
-      ignoreRemoteUntil = Date.now()+1500;
-      try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
-      if(history) cloudHistory(reason);
-      if(!silent) notice('Supabase 저장 완료','success');
-      log('save complete', reason, lastUpdatedAt);
+      lastRemoteUpdatedAt=payload.updated_at;
+      lastSavedHash=lastSeenHash=stateHash(state);
+      try{localStorage.removeItem(STORAGE_KEY)}catch(e){}
+      if(history) saveHistory(reason);
+      if(!silent) notify(reason+' 완료','success');
       return true;
-    }catch(e){
-      err('save failed', e);
-      notice('Supabase 저장 실패: '+(e.message||'콘솔 확인'), 'error');
-      alert('Supabase 저장 실패: '+(e.message||'콘솔을 확인하세요.'));
-      return false;
-    }finally{ setTimeout(()=>{savingCloud=false;},300); }
+    }catch(e){console.error('[FILM HK '+VERSION+'] save failed',e); notify('Supabase 저장 실패: '+(e.message||'콘솔 확인'),'error'); alert('Supabase 저장 실패: '+(e.message||'콘솔을 확인하세요.')); return false;}
+    finally{setTimeout(()=>{cloudSaving=false},200)}
   }
-
-  // Disable old localStorage saving as primary storage.
-  window.save = save = function(){ cloudSave('legacy save', {silent:true, history:false}); };
-
-  let lastEquipmentModelView = '';
-  function preserveEquipmentView(){
-    try{
-      const h=document.querySelector('#equipmentContent .equip-model-header h3');
-      if(h && h.textContent) lastEquipmentModelView=h.textContent.trim();
-    }catch(e){}
+  function scheduleSave(reason='자동 저장'){
+    if(!cloudLoaded||cloudLoading||cloudSaving) return;
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>cloudSave(reason,{silent:true,history:false}),700);
   }
-  function renderEquipmentPreserved(preferredModel){
-    const m = preferredModel || lastEquipmentModelView;
-    try{
-      if(m && state.equipment.some(e=>modelKey(e)===m) && typeof window.showModelInstances==='function'){
-        window.showModelInstances(m);
-        lastEquipmentModelView=m;
-        return;
-      }
-    }catch(e){}
-    if(typeof renderEquipment==='function') renderEquipment();
-  }
-  async function saveAndConfirm(reason){
-    const ok=await cloudSave(reason, {silent:true, history:true});
-    if(ok) notice(reason+' 완료', 'success');
-    return ok;
-  }
-
-  function readEquipmentForm(){
-    return {category:val('eqCategory'),name:val('eqName').trim(),serial:val('eqSerial').trim(),manufacturerSerial:val('eqManufacturerSerial').trim(),rate:Number(val('eqRate'))||0,status:val('eqStatus'),location:val('eqLocation').trim(),note:val('eqNote').trim()};
-  }
-  const oldOpenEquipmentModal = window.openEquipmentModal;
-  window.openEquipmentModal = function(id='', sameModel=''){
-    const r = oldOpenEquipmentModal.apply(this, arguments);
-    setTimeout(()=>{
-      const input=document.getElementById('eqManufacturerSerial');
-      if(input){ const e=id?eq(id):null; input.value=e?.manufacturerSerial||''; }
-    },0);
-    return r;
-  };
-  window.saveEquipment = async function(){
-    preserveEquipmentView();
-    const id=document.getElementById('eqId').value;
-    const data=readEquipmentForm();
-    if(!data.name) return alert('장비명을 입력하세요');
-    let targetModel = data.name;
-    if(id){ const item=eq(id); if(item) Object.assign(item,data); }
-    else state.equipment.push({id:uid('e'),...data});
-    const ok=await saveAndConfirm('장비 등록/수정');
-    if(!ok) return;
-    closeModal('equipmentModal');
-    renderEquipmentPreserved(targetModel);
-    renderDashboard();
-    alert('장비가 등록/수정되었습니다.');
-  };
-  try{ saveEquipment = window.saveEquipment; }catch(e){}
-  window.saveCustomer = async function(){
-    const id=val('custId');
-    const data={type:val('custType'),name:val('custName').trim(),contact:val('custContact').trim(),phone:val('custPhone').trim(),kakao:val('custKakao').trim(),email:val('custEmail').trim(),note:val('custNote').trim()};
-    if(!data.name) return alert('고객명을 입력하세요');
-    let saved;
-    if(id){ saved=cust(id); if(saved) Object.assign(saved,data); }
-    else{ saved={id:uid('c'),...data}; state.customers.push(saved); }
-    const ok=await saveAndConfirm('고객 저장');
-    if(!ok) return;
-    closeModal('customerModal');
-    const cm=document.getElementById('customerModal'); if(cm) cm.classList.remove('front');
-    renderCustomers();
-    if(window.__returnToBooking){ window.__returnToBooking=false; openModal('bookingModal'); selectCustomer(saved.id); }
-  };
-  try{ saveCustomer = window.saveCustomer; }catch(e){}
-  window.saveBooking = async function(){
-    const cId=val('bkCustomerId');
-    if(!cId) return alert('고객을 선택하세요');
-    if(!chooserSelection.length) return alert('장비를 선택하세요');
-    const data={customerId:cId,equipmentIds:[...chooserSelection],startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),status:val('bkStatus'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0,payment:val('bkPayment'),note:val('bkNote')};
-    if(dt(data.startDate,data.startTime)>=dt(data.endDate,data.endTime)) return alert('반납 시간이 시작 시간보다 뒤여야 합니다');
-    const id=val('bkId');
-    const blocked=data.equipmentIds.flatMap(eid=>conflictBookings(eid,data.startDate,data.endDate,data.startTime,data.endTime,id).map(b=>`${equipmentName(eid)}: ${b.startDate}~${b.endDate} ${customerName(b.customerId)}`));
-    if(blocked.length) return alert('예약 불가능 장비가 포함되어 있습니다.\n\n'+blocked.join('\n'));
-    if(id){ const item=state.bookings.find(b=>b.id===id); if(item) Object.assign(item,data); }
-    else state.bookings.push({id:uid('b'),createdAt:new Date().toISOString(),...data});
-    const ok=await saveAndConfirm('예약 등록/수정');
-    if(!ok) return;
-    closeModal('bookingModal'); renderBookings(); renderCalendar(); renderDashboard(); renderQuotes();
-    alert('예약이 등록/수정되었습니다.');
-  };
-  try{ saveBooking = window.saveBooking; }catch(e){}
-  function wrapEventSave(name, reason){
-    const old=window[name];
-    if(typeof old!=='function') return;
-    window[name]=function(){ const r=old.apply(this, arguments); setTimeout(()=>cloudSave(reason,{silent:true}),50); return r; };
-  }
-  [['deleteEquipment','장비 삭제'],['deleteCustomer','고객 삭제'],['deleteBooking','예약 삭제'],['markReturned','반납 처리'],['saveSettings','설정 저장'],['addDiscountRule','할인구간 저장']].forEach(x=>wrapEventSave(x[0],x[1]));
-
-  window.exportData = function(){
-    const backup={exported_at:new Date().toISOString(),source:'FILM HK RENTAL '+VERSION+' Supabase backup',cloud_state_id:CLOUD_STATE_ID,data:cloneState()};
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
-    a.download='filmhk-rental-backup-'+new Date().toISOString().slice(0,10)+'.json';
-    a.click();
-  };
-  window.importData = function(ev){
-    const f=ev.target.files && ev.target.files[0]; if(!f) return;
-    const r=new FileReader();
-    r.onload=async()=>{
-      try{ const parsed=JSON.parse(r.result); state=normalizeState(parsed.data||parsed); renderCurrent(); await cloudSave('복원', {history:true}); alert('복원 완료'); }
-      catch(e){ alert('복원 실패. JSON 파일을 확인하세요.'); }
-      finally{ ev.target.value=''; }
-    };
-    r.readAsText(f);
-  };
-  window.resetData = async function(){ if(!confirm('현재 데이터를 샘플 데이터로 초기화할까요?')) return; state=seed(); renderCurrent(); await cloudSave('초기화'); };
-
-  // Auth UI
-  function setupLoginUI(){
-    const pw=document.getElementById('loginPw');
-    const box=document.querySelector('#loginGate .login-box');
-    if(!pw||!box) return;
-    if(!document.getElementById('loginEmail')){
-      const email=document.createElement('input');
-      email.id='loginEmail'; email.type='email'; email.placeholder='이메일'; email.value='hk@filmhk.co.kr';
-      email.style.cssText='width:100%;margin-bottom:9px';
-      pw.parentNode.insertBefore(email,pw);
-    }
-    pw.placeholder='비밀번호';
-    const p=box.querySelector('p.meta:last-child'); if(p) p.textContent='Supabase 관리자 계정으로 로그인';
-  }
-  window.tryLogin = async function(){
-    const email=(document.getElementById('loginEmail')?.value||'hk@filmhk.co.kr').trim();
-    const password=document.getElementById('loginPw')?.value||'';
-    const errEl=document.getElementById('loginErr');
-    if(errEl) errEl.textContent='';
-    const {data,error}=await client.auth.signInWithPassword({email,password});
-    if(error){ if(errEl) errEl.textContent='로그인 실패: '+error.message; return false; }
-    sessionStorage.setItem(AUTH_KEY,'1');
-    document.getElementById('loginGate').style.display='none';
-    await cloudLoad({force:true, silent:false});
-    return true;
-  };
-  window.logout = async function(){ await client.auth.signOut(); sessionStorage.removeItem(AUTH_KEY); location.reload(); };
-  window.changePw = async function(){
-    const user=await sessionUser(); if(!user) return alert('로그인 후 변경 가능합니다.');
-    const current=prompt('현재 비밀번호를 입력하세요'); if(!current) return;
-    const check=await client.auth.signInWithPassword({email:user.email,password:current});
-    if(check.error) return alert('현재 비밀번호가 일치하지 않습니다.');
-    const n1=prompt('새 비밀번호를 입력하세요'); if(!n1 || n1.length<6) return alert('새 비밀번호는 6자 이상이어야 합니다.');
-    const n2=prompt('새 비밀번호를 한 번 더 입력하세요'); if(n1!==n2) return alert('새 비밀번호가 서로 다릅니다.');
-    const {error}=await client.auth.updateUser({password:n1});
-    if(error) return alert('비밀번호 변경 실패: '+error.message);
-    alert('비밀번호가 변경되었습니다.');
-  };
+  // All old save() calls become Supabase-only after cloud load. Before cloud load, never create/overwrite cloud state.
+  window.save=save=function(){ scheduleSave('변경사항 저장'); };
 
   function addRefreshButton(){
     const top=document.querySelector('.top-actions'); if(!top||document.getElementById('filmhkCloudRefreshBtn')) return;
-    const btn=document.createElement('button');
-    btn.id='filmhkCloudRefreshBtn'; btn.className='btn btn-secondary btn-sm'; btn.title='Supabase 데이터 새로고침'; btn.textContent='↻';
-    btn.onclick=()=>cloudLoad({force:true, silent:false});
-    top.insertBefore(btn, top.firstChild);
+    const btn=document.createElement('button'); btn.id='filmhkCloudRefreshBtn'; btn.className='btn btn-secondary btn-sm'; btn.title='Supabase 데이터 새로고침'; btn.textContent='↻'; btn.onclick=()=>cloudLoad({force:true,silent:false}); top.insertBefore(btn,top.firstChild);
   }
-  function setupRealtime(){
+  function updateVersion(){
+    document.title='FILM HK RENTAL 관리자 '+VERSION;
+    const h=document.querySelector('header h1'); if(h) h.textContent='FILM HK RENTAL · 관리자 '+VERSION;
+  }
+  function setupLoginUI(){
+    const pw=document.getElementById('loginPw'), box=document.querySelector('#loginGate .login-box'); if(!pw||!box) return;
+    if(!document.getElementById('loginEmail')){const email=document.createElement('input'); email.id='loginEmail'; email.type='email'; email.placeholder='이메일'; email.value='hk@filmhk.co.kr'; email.style.cssText='width:100%;margin-bottom:9px'; pw.parentNode.insertBefore(email,pw)}
+    const p=box.querySelector('p.meta:last-child'); if(p) p.textContent='Supabase 관리자 계정으로 로그인';
+  }
+  window.tryLogin=async function(){
+    const email=(document.getElementById('loginEmail')?.value||'hk@filmhk.co.kr').trim();
+    const password=document.getElementById('loginPw')?.value||'';
+    const err=document.getElementById('loginErr'); if(err) err.textContent='';
+    const {error}=await client.auth.signInWithPassword({email,password});
+    if(error){if(err) err.textContent='로그인 실패: '+error.message; return false;}
+    sessionStorage.setItem(AUTH_KEY,'1'); document.getElementById('loginGate').style.display='none';
+    await cloudLoad({force:true,silent:false});
+    return true;
+  };
+  window.logout=async function(){await client.auth.signOut(); sessionStorage.removeItem(AUTH_KEY); location.reload();};
+  window.changePw=async function(){
+    const user=await getUser(); if(!user) return alert('로그인 후 변경 가능합니다.');
+    const cur=prompt('현재 비밀번호를 입력하세요'); if(!cur) return;
+    const check=await client.auth.signInWithPassword({email:user.email,password:cur}); if(check.error) return alert('현재 비밀번호가 일치하지 않습니다.');
+    const n1=prompt('새 비밀번호를 입력하세요'); if(!n1||n1.length<6) return alert('새 비밀번호는 6자 이상이어야 합니다.');
+    const n2=prompt('새 비밀번호를 한 번 더 입력하세요'); if(n1!==n2) return alert('새 비밀번호가 서로 다릅니다.');
+    const {error}=await client.auth.updateUser({password:n1}); if(error) return alert('비밀번호 변경 실패: '+error.message); alert('비밀번호가 변경되었습니다.');
+  };
+
+  function readEquipmentForm(){return {category:val('eqCategory'),name:val('eqName').trim(),serial:val('eqSerial').trim(),manufacturerSerial:val('eqManufacturerSerial')?.trim?.()||'',rate:Number(val('eqRate'))||0,status:val('eqStatus'),location:val('eqLocation').trim(),note:val('eqNote').trim()}}
+  window.saveEquipment=async function(){
+    const id=document.getElementById('eqId').value; const data=readEquipmentForm(); if(!data.name) return alert('장비명을 입력하세요');
+    if(id){const item=eq(id); if(item) Object.assign(item,data)} else state.equipment.push({id:uid('e'),...data});
+    const ok=await cloudSave('장비 저장',{silent:false,history:true}); if(!ok) return;
+    closeModal('equipmentModal');
+    if(typeof showModelInstances==='function') showModelInstances(data.name); else renderEquipment();
+    renderDashboard(); renderBookings(); renderCalendar(); renderQuotes();
+    alert('장비가 등록되었습니다.');
+  };
+  try{saveEquipment=window.saveEquipment}catch(e){}
+  window.saveCustomer=async function(){
+    const id=val('custId'); const data={type:val('custType'),name:val('custName').trim(),contact:val('custContact').trim(),phone:val('custPhone').trim(),kakao:val('custKakao').trim(),email:val('custEmail').trim(),note:val('custNote').trim()}; if(!data.name) return alert('고객명을 입력하세요');
+    let saved; if(id){saved=cust(id); if(saved) Object.assign(saved,data)} else{saved={id:uid('c'),...data}; state.customers.push(saved)}
+    const ok=await cloudSave('고객 저장',{silent:false,history:true}); if(!ok) return;
+    closeModal('customerModal'); const cm=document.getElementById('customerModal'); if(cm) cm.classList.remove('front'); renderCustomers(); renderBookings(); renderDashboard(); renderQuotes();
+    if(window.__returnToBooking){window.__returnToBooking=false; openModal('bookingModal'); selectCustomer(saved.id)}
+    alert('고객이 등록되었습니다.');
+  };
+  try{saveCustomer=window.saveCustomer}catch(e){}
+
+  function isSetEquipment(id){const e=eq(id)||{}; return /세트|SET|FULL/i.test((e.category||'')+' '+(e.name||''));}
+  function setComponentText(b,setId){
+    const ids=(b?.setComponents&&b.setComponents[setId])||[];
+    return ids.map(id=>equipmentName(id)).filter(Boolean).join(', ');
+  }
+  function ensureSetComponentModal(){
+    if(document.getElementById('setComponentModal')) return;
+    const wrap=document.createElement('div'); wrap.className='modal-bg'; wrap.id='setComponentModal';
+    wrap.innerHTML='<div class="modal large"><div class="modal-header"><h3>세트 구성품 선택</h3><button class="close" onclick="closeModal(\'setComponentModal\')">×</button></div><div class="modal-body"><div class="toolbar"><span class="meta" id="setComponentTitle"></span><button class="btn btn-secondary btn-sm" onclick="filmhkAutoPickSetComponents()">자동 추천</button></div><div id="setComponentBody"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal(\'setComponentModal\')">닫기</button><button class="btn btn-primary" onclick="filmhkApplySetComponents()">구성 반영</button></div></div>';
+    document.body.appendChild(wrap);
+  }
+  let editingSetId=null;
+  window.openSetComponentSelector=function(setId){
+    ensureSetComponentModal(); editingSetId=setId; currentBookingSetComponents=currentBookingSetComponents||{}; currentBookingSetComponents[setId]=currentBookingSetComponents[setId]||[];
+    const setEq=eq(setId)||{}; document.getElementById('setComponentTitle').textContent=(setEq.name||'세트')+' 구성품';
+    const cats=[...new Set(state.equipment.filter(e=>e.id!==setId && !isSetEquipment(e.id)).map(e=>e.category||'기타'))];
+    const sD=val('bkStartDate'), eD=val('bkEndDate'), sT=val('bkStartTime'), eT=val('bkEndTime'), ignore=val('bkId');
+    document.getElementById('setComponentBody').innerHTML=cats.map(cat=>{
+      const list=state.equipment.filter(e=>(e.category||'기타')===cat && e.id!==setId && !isSetEquipment(e.id));
+      return '<div class="card" style="margin-bottom:10px"><h4>'+esc(cat)+'</h4><div class="model-grid">'+list.map(e=>{
+        const selected=(currentBookingSetComponents[setId]||[]).includes(e.id);
+        const conflicts=conflictBookings(e.id,sD,eD,sT,eT,ignore);
+        const ok=(e.status==='available' && !conflicts.length) || selected;
+        const reason=e.status!=='available'?statusText(e.status):(conflicts[0]?'예약중: '+conflicts[0].startDate+'~'+conflicts[0].endDate:'사용가능');
+        return '<label class="instance '+(ok?'':'disabled')+'"><input type="checkbox" '+(selected?'checked':'')+' '+(ok?'':'disabled')+' data-set-component="'+e.id+'"><div><div class="main">'+esc(e.name)+' '+esc(e.serial||'')+'</div><div class="sub">'+esc(reason)+'</div></div></label>';
+      }).join('')+'</div></div>';
+    }).join('');
+    openModal('setComponentModal');
+  };
+  window.filmhkAutoPickSetComponents=function(){
+    if(!editingSetId) return;
+    const sD=val('bkStartDate'), eD=val('bkEndDate'), sT=val('bkStartTime'), eT=val('bkEndTime'), ignore=val('bkId');
+    const picked=[];
+    const cats=['모니터·송수신기','카메라 악세사리','기타 악세사리','그립','렌즈'];
+    cats.forEach(cat=>{
+      const cand=state.equipment.filter(e=>(e.category||'')===cat && e.id!==editingSetId && !isSetEquipment(e.id) && e.status==='available' && !conflictBookings(e.id,sD,eD,sT,eT,ignore).length).sort((a,b)=>String(a.serial||a.name).localeCompare(String(b.serial||b.name),'ko'))[0];
+      if(cand) picked.push(cand.id);
+    });
+    currentBookingSetComponents[editingSetId]=Array.from(new Set([...(currentBookingSetComponents[editingSetId]||[]),...picked]));
+    openSetComponentSelector(editingSetId);
+  };
+  window.filmhkApplySetComponents=function(){
+    if(!editingSetId) return closeModal('setComponentModal');
+    currentBookingSetComponents[editingSetId]=Array.from(document.querySelectorAll('[data-set-component]:checked')).map(i=>i.dataset.setComponent);
+    closeModal('setComponentModal'); renderSelectedEquipments(); updateBookingPreview();
+  };
+  const oldOpenBookingModal=window.openBookingModal;
+  window.openBookingModal=function(id='',presetDate=''){
+    const r=oldOpenBookingModal.apply(this,arguments);
+    const b=id?state.bookings.find(x=>x.id===id):null;
+    currentBookingSetComponents=clone(b?.setComponents||{});
+    setTimeout(()=>{try{renderSelectedEquipments()}catch(e){}},0);
+    return r;
+  };
+  try{openBookingModal=window.openBookingModal}catch(e){}
+  const oldRenderSelected=window.renderSelectedEquipments;
+  window.renderSelectedEquipments=function(){
+    const box=document.getElementById('selectedEquipments');
+    if(!box) return oldRenderSelected&&oldRenderSelected();
+    if(!chooserSelection.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const days=billDays(val('bkStartDate'),val('bkStartTime'),val('bkEndDate'),val('bkEndTime'));
+    box.innerHTML='<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>'+chooserSelection.map(id=>{const e=eq(id)||{}; const comps=(currentBookingSetComponents[id]||[]).map(equipmentName).join(', '); return '<tr><td><b>'+esc(e.name||'')+'</b><br><span class="meta">'+esc(e.serial||'')+'</span>'+(isSetEquipment(id)?'<div style="margin-top:6px"><button class="btn btn-secondary btn-sm" onclick="openSetComponentSelector(\''+id+'\')">세트 구성 선택</button></div><div class="meta">'+esc(comps||'구성 미선택')+'</div>':'')+'</td><td class="num">'+fmt(e.rate||0)+'</td><td class="num">'+days+'일 · '+fmt((e.rate||0)*days)+'</td><td><button class="btn btn-danger btn-sm" onclick="chooserSelection=chooserSelection.filter(x=>x!==\''+id+'\');delete currentBookingSetComponents[\''+id+'\'];renderSelectedEquipments();updateBookingPreview()">제거</button></td></tr>'}).join('')+'</tbody></table>';
+  };
+  try{renderSelectedEquipments=window.renderSelectedEquipments}catch(e){}
+  window.saveBooking=async function(){
+    const cId=val('bkCustomerId'); if(!cId) return alert('고객을 선택하세요'); if(!chooserSelection.length) return alert('장비를 선택하세요');
+    const data={customerId:cId,equipmentIds:[...chooserSelection],setComponents:clone(currentBookingSetComponents||{}),startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),status:val('bkStatus'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0,payment:val('bkPayment'),note:val('bkNote'),accessories:(typeof collectAccessories==='function'?collectAccessories():{})};
+    if(dt(data.startDate,data.startTime)>=dt(data.endDate,data.endTime)) return alert('반납 시간이 시작 시간보다 뒤여야 합니다');
+    const allIds=[...data.equipmentIds,...Object.values(data.setComponents||{}).flat()];
+    const blocked=Array.from(new Set(allIds)).flatMap(eid=>conflictBookings(eid,data.startDate,data.endDate,data.startTime,data.endTime,val('bkId')).map(b=>equipmentName(eid)+': '+b.startDate+'~'+b.endDate+' '+customerName(b.customerId)));
+    if(blocked.length) return alert('예약 불가능 장비가 포함되어 있습니다.\n\n'+blocked.join('\n'));
+    const id=val('bkId'); if(id){const item=state.bookings.find(b=>b.id===id); if(item) Object.assign(item,data)} else state.bookings.push({id:uid('b'),createdAt:new Date().toISOString(),...data});
+    const ok=await cloudSave('예약 저장',{silent:false,history:true}); if(!ok) return;
+    closeModal('bookingModal'); renderBookings(); renderCalendar(); renderDashboard(); renderQuotes(); alert('예약이 등록되었습니다.');
+  };
+  try{saveBooking=window.saveBooking}catch(e){}
+  const oldRenderQuote=window.renderQuote;
+  window.renderQuote=function(){
+    if(typeof oldRenderQuote==='function') oldRenderQuote.apply(this,arguments);
     try{
-      if(channel) client.removeChannel(channel);
-      channel=client.channel('filmhk-app-state-v50').on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'id=eq.'+CLOUD_STATE_ID},(payload)=>{
-        if(Date.now()<ignoreRemoteUntil) return;
-        const next=payload?.new?.updated_at;
-        if(!next || (lastUpdatedAt && new Date(next)<=new Date(lastUpdatedAt))) return;
-        if(modalOpen()) return;
-        cloudLoad({force:true, silent:true});
-      }).subscribe();
-    }catch(e){ console.warn('[FILM HK '+VERSION+'] realtime unavailable', e); }
-  }
-  function setupEquipmentViewTracking(){
-    const oldShow=window.showModelInstances;
-    if(typeof oldShow==='function' && !oldShow.__filmhkTracked){
-      window.showModelInstances=function(m){ lastEquipmentModelView=m; return oldShow.apply(this, arguments); };
-      window.showModelInstances.__filmhkTracked=true;
-      try{ showModelInstances=window.showModelInstances; }catch(e){}
-    }
-  }
+      const id=val('quoteBooking'); const b=state.bookings.find(x=>x.id===id); if(!b||!b.setComponents) return;
+      const rows=document.querySelectorAll('#quoteContent .quote-doc tbody tr');
+      (b.equipmentIds||[]).forEach((eid,i)=>{ if(!isSetEquipment(eid)) return; const txt=setComponentText(b,eid); if(!txt) return; const row=rows[i]; const cells=row?row.querySelectorAll('td'):[]; if(cells&&cells[7]) cells[7].innerHTML=(cells[7].innerHTML?cells[7].innerHTML+'<br>':'')+'세트 구성: '+esc(txt); });
+    }catch(e){console.warn('[FILM HK '+VERSION+'] quote component patch warning',e)}
+  };
+  try{renderQuote=window.renderQuote}catch(e){}
+
+  ['deleteEquipment','deleteCustomer','deleteBooking','markReturned','saveSettings','addDiscountRule'].forEach(name=>{
+    const old=window[name]; if(typeof old!=='function') return;
+    window[name]=function(){const r=old.apply(this,arguments); setTimeout(()=>cloudSave(name,{silent:true,history:true}),200); return r;};
+    try{eval(name+'=window[name]')}catch(e){}
+  });
+
+  window.exportData=function(){const backup={exported_at:new Date().toISOString(),source:'FILM HK RENTAL '+VERSION,cloud_state_id:CLOUD_STATE_ID,data:cloneState()}; const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'})); a.download='filmhk-rental-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();};
+  window.importData=function(ev){const f=ev.target.files&&ev.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=async()=>{try{const parsed=JSON.parse(r.result); state=normalizeState(parsed.data||parsed); renderCurrent(); await cloudSave('복원',{silent:false,history:true}); alert('복원 완료')}catch(e){alert('복원 실패. JSON 파일을 확인하세요.')}finally{ev.target.value=''}}; r.readAsText(f);};
+  window.resetData=async function(){ if(!confirm('정말 샘플 데이터로 초기화할까요? 현재 클라우드 데이터가 덮어써집니다.')) return; state=normalizeState(seed()); renderCurrent(); await cloudSave('초기화',{silent:false,history:true}); };
+
+  window.filmhkSaveNow=()=>cloudSave('수동 저장',{silent:false,history:true});
+  window.filmhkSyncNow=()=>cloudLoad({force:true,silent:false});
+  window.filmhkCloudStatus=async()=>{const user=await getUser().catch(()=>null); const row=await fetchRemote().catch(e=>({error:e.message})); const result={version:VERSION,user:user?.email||null,cloudLoaded,lastRemoteUpdatedAt,localCounts:{equipment:state?.equipment?.length,customers:state?.customers?.length,bookings:state?.bookings?.length},remoteUpdatedAt:row?.updated_at||null,remoteCounts:row?.data?{equipment:row.data.equipment?.length,customers:row.data.customers?.length,bookings:row.data.bookings?.length}:null,row}; console.log('[FILM HK '+VERSION+']',result); return result;};
 
   async function boot(){
-    setupLoginUI(); addRefreshButton(); setupEquipmentViewTracking();
+    updateVersion(); setupLoginUI(); addRefreshButton();
     const {data}=await client.auth.getSession();
-    if(data?.session?.user){
-      sessionStorage.setItem(AUTH_KEY,'1');
-      document.getElementById('loginGate').style.display='none';
-      await cloudLoad({force:true, silent:true});
-      setupRealtime();
-    }
+    if(data?.session?.user){sessionStorage.setItem(AUTH_KEY,'1'); document.getElementById('loginGate').style.display='none'; await cloudLoad({force:true,silent:true});}
+    lastSeenHash=stateHash(state); setInterval(()=>{ if(!cloudLoaded||cloudLoading||cloudSaving||modalOpen()) return; const h=stateHash(state); if(h!==lastSeenHash){lastSeenHash=h; scheduleSave('자동 변경 감지 저장')} },1200);
   }
-  window.filmhkSaveNow=()=>cloudSave('수동 저장');
-  window.filmhkSyncNow=()=>cloudLoad({force:true, silent:false});
-  window.filmhkCloudStatus=async()=>{
-    const user=await sessionUser().catch(()=>null);
-    const {data,error}=await client.from('app_state').select('updated_at,data').eq('id',CLOUD_STATE_ID).maybeSingle();
-    const result={version:VERSION,user:user?.email||null,lastUpdatedAt,remoteUpdatedAt:data?.updated_at||null,error,localCounts:{equipment:state?.equipment?.length,customers:state?.customers?.length,bookings:state?.bookings?.length},remoteCounts:data?.data?{equipment:data.data.equipment?.length,customers:data.data.customers?.length,bookings:data.data.bookings?.length}:null};
-    console.log('[FILM HK '+VERSION+'] status', result); return result;
-  };
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
 })();
 </script>
 </body></html>
