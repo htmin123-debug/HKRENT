@@ -19401,7 +19401,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v243';
+  const DISPLAY_VERSION = 'v244';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -19986,8 +19986,9 @@ else{bump();injectGroupCard();}
       // 원가는 항상 보존 (견적서에서 사용)
       p.grossTotal = p.total;
       p.grossBase  = p.base;
-      // 자체 촬영이면 매출/미수 집계에서 빠지도록 total/vat 을 0 으로
-      if(b && b.internal){
+      // 자체 촬영이면 매출/미수 집계에서 빠지도록 total/vat 을 0 으로.
+      // 단, 견적서를 그리는 중(__fhkV240RenderingQuote)에는 원가를 그대로 보여준다.
+      if(b && b.internal && !window.__fhkV240RenderingQuote){
         p.revenueExcluded = true;
         p.total = 0;
         p.vat = 0;
@@ -20001,25 +20002,25 @@ else{bump();injectGroupCard();}
     try{ priceBreakdown = wrapped; }catch(_){}
   })();
 
-  /* ---------- 견적서는 원가로 그리도록 보정 ----------
-     priceBreakdown 이 0을 돌려줘도 견적서 금액은 원가로 표시되어야 한다.
-     renderQuote 직후, 견적 품목/합계가 0이면 원가 기준으로 다시 채운다. */
-  function fixQuoteGrossAmounts(){
-    try{
-      const qc = $('quoteContent'); if(!qc) return;
-      const sel = $('quoteBooking'); const b = sel ? findBooking(sel.value) : null;
-      if(!b || !b.internal) return;
-      // 견적서는 원가를 보여주기 위해, 내부 플래그를 잠시 끄고 다시 렌더
-      // (간단·안전하게: 임시로 internal 해제 → renderQuote → 복원)
-      if(window.__fhkV240QuoteFixing) return;
-      window.__fhkV240QuoteFixing = true;
-      const keep = b.internal;
-      b.internal = false;
-      try{ if(typeof window.renderQuote==='function') window.renderQuote(); }catch(_){}
-      b.internal = keep;
-      window.__fhkV240QuoteFixing = false;
-    }catch(_){ window.__fhkV240QuoteFixing = false; }
-  }
+  /* renderQuote 를 감싸: 그리는 동안에는 priceBreakdown 이 원가를 반환하도록 플래그를 켠다.
+     (이전의 'internal 끄고 재렌더' 방식은 무한 재렌더/모바일 깜빡임을 유발해 제거) */
+  (function wrapRenderQuoteForGross(){
+    const prev = window.renderQuote;
+    if(typeof prev !== 'function' || prev.__fhkV240GrossWrapped) return;
+    const wrapped = function(){
+      const keep = window.__fhkV240RenderingQuote;
+      window.__fhkV240RenderingQuote = true;
+      try{ return prev.apply(this, arguments); }
+      finally{ window.__fhkV240RenderingQuote = keep || false; }
+    };
+    wrapped.__fhkV240GrossWrapped = true;
+    window.renderQuote = wrapped;
+    try{ renderQuote = wrapped; }catch(_){}
+  })();
+
+  /* ---------- (구버전) 견적 원가 보정 — 이제 priceBreakdown 인라인 처리로 대체됨 ----------
+     재렌더 방식은 모바일 깜빡임을 유발하므로 no-op 으로 둔다. */
+  function fixQuoteGrossAmounts(){ /* no-op: __fhkV240RenderingQuote 플래그로 처리 */ }
 
   /* ---------- (2) 예약 모달 UI: 자체촬영 체크 + 촬영명 ---------- */
   function ensureModalFields(){
@@ -20627,7 +20628,12 @@ else{bump();injectGroupCard();}
   }
 
   // 견적 렌더 후/탭 진입/리사이즈 시 재설정
-  function refresh(){ setTimeout(setup, 60); setTimeout(setup, 250); }
+  let __refreshTimer = null;
+  function refresh(){
+    // 여러 패치가 renderQuote 를 연달아 호출해도(0/80/220/500ms 등) 마지막 한 번만 적용 → 깜빡임 방지
+    if(__refreshTimer) clearTimeout(__refreshTimer);
+    __refreshTimer = setTimeout(()=>{ __refreshTimer=null; setup(); }, 280);
+  }
 
   (function wrapRenders(){
     ['renderQuote'].forEach(name=>{
