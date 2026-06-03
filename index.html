@@ -695,7 +695,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   };
 
   window.renderDashboard=function(){
-    const total=state.equipment.length;const active=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b))).length;const scheduled=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=new Date()).length;const mr=monthRange(ymNow());const monthBookings=state.bookings.filter(b=>b.status!=='cancelled'&&inMonth(b,ymNow()));const monthTotal=monthBookings.reduce((s,b)=>s+priceBreakdown(b).total,0);const monthUnpaid=monthBookings.filter(b=>b.payment!=='paid').reduce((s,b)=>s+priceBreakdown(b).total,0);
+    const total=state.equipment.length;const active=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b))).length;const scheduled=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=new Date()).length;const mr=monthRange(ymNow());const monthBookings=state.bookings.filter(b=>b.status!=='cancelled'&&b.startDate>=mr.s&&b.startDate<=mr.e);const monthTotal=monthBookings.reduce((s,b)=>s+priceBreakdown(b).total,0);const monthUnpaid=monthBookings.filter(b=>b.payment!=='paid').reduce((s,b)=>s+priceBreakdown(b).total,0);
     q('dashStats').innerHTML=`<div class="stat"><div class="label">전체 장비</div><div class="value">${total}</div><div class="sub">등록 장비</div></div><div class="stat"><div class="label">진행 중</div><div class="value">${active}</div><div class="sub">대여/연체</div></div><div class="stat"><div class="label">예정 대여</div><div class="value">${scheduled}</div><div class="sub">앞으로 출고</div></div><div class="stat"><div class="label">이번달 예약총액</div><div class="value" style="font-size:18px">${fmt(monthTotal)}</div><div class="sub">${mr.s}~${mr.e}</div></div><div class="stat"><div class="label">이번달 미수금</div><div class="value" style="font-size:18px;color:#fbbf24">${fmt(monthUnpaid)}</div><div class="sub">미입금/부분입금</div></div>`;
     q('activeRentals').innerHTML=simpleBookingTable(state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b))).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime)));
     q('upcomingRentals').innerHTML=simpleBookingTable(state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=new Date()).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime)).slice(0,10));
@@ -19401,7 +19401,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v240';
+  const DISPLAY_VERSION = 'v243';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -20193,6 +20193,465 @@ else{bump();injectGroupCard();}
     try{ showPanel=window.showPanel; }catch(_){}
   }
   [1000,2000].forEach(t=>setTimeout(decorateBookingRows,t));
+})();
+</script>
+
+<script id="fhk-v241-unpaid-modal-script">
+/*
+  v241 — 대시보드 '이번달 미수금' 클릭 → 미수 예약 목록 모달
+   · 미수금 stat 카드를 클릭하면 이번달(대여일 기준) 미수 예약 목록이 모달로 뜬다.
+   · 예약번호·고객명 클릭 가능(예약 상세 / 고객 이력), 금액·입금상태 표시.
+   · 자체촬영(매출 제외) 예약은 미수에서도 제외.
+  ※ 이 블록만 지우면 기능이 제거된다.
+*/
+(function(){
+  if(window.__fhkV241UnpaidModal) return;
+  window.__fhkV241UnpaidModal = true;
+
+  const $ = id => document.getElementById(id);
+  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  function money(n){ try{ if(typeof fmt==='function') return fmt(n); if(typeof won==='function') return won(n); }catch(_){} return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
+  function priceOf(b){ try{ return priceBreakdown(b); }catch(_){ return {total:0,grossTotal:0}; } }
+  function custName(id){ try{ if(typeof customerName==='function') return customerName(id); }catch(_){} const c=(S().customers||[]).find(x=>x.id===id); return c?c.name:''; }
+  function ymNowLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  function monthRangeLocal(ym){ const [y,m]=String(ym||ymNowLocal()).split('-').map(Number); const s=`${y}-${String(m).padStart(2,'0')}-01`; const last=new Date(y,m,0).getDate(); return {s, e:`${y}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`}; }
+  const payLabel = p => p==='partial' ? '부분입금' : (p==='paid' ? '입금완료' : '미입금');
+
+  function unpaidThisMonth(){
+    const mr = monthRangeLocal(ymNowLocal());
+    return (S().bookings||[]).filter(b=>
+      b && b.status!=='cancelled' && b.payment!=='paid' &&
+      b.startDate>=mr.s && b.startDate<=mr.e &&
+      !b.internal   // 자체촬영 제외
+    ).sort((a,b)=>String(a.startDate).localeCompare(String(b.startDate)));
+  }
+
+  function ensureModal(){
+    if($('fhkUnpaidModal')) return;
+    document.body.insertAdjacentHTML('beforeend',
+      '<div class="modal-bg" id="fhkUnpaidModal"><div class="modal large"><div class="modal-header">'+
+      '<h3 id="fhkUnpaidTitle">이번달 미수 예약</h3>'+
+      '<button class="close" onclick="closeModal(\'fhkUnpaidModal\')">×</button></div>'+
+      '<div class="modal-body" id="fhkUnpaidBody"></div></div></div>');
+  }
+
+  window.fhkOpenUnpaidModal = function(){
+    ensureModal();
+    const list = unpaidThisMonth();
+    const mr = monthRangeLocal(ymNowLocal());
+    const totalUnpaid = list.reduce((s,b)=>s+(priceOf(b).total||0),0);
+    const rows = list.map(b=>{
+      const p = priceOf(b);
+      const amt = p.total||0;
+      const no = b.bookingNo || '(번호없음)';
+      const nm = custName(b.customerId) || '-';
+      const period = (b.startDate||'')+' ~ '+(b.endDate||'');
+      const proj = b.projectName ? '<div style="font-size:11px;color:#fbbf24;margin-top:2px">'+H(b.projectName)+'</div>' : '';
+      return '<tr>'+
+        '<td><b class="clickable" style="cursor:pointer;color:#60a5fa" onclick="fhkUnpaidGoBooking(\''+b.id+'\')">'+H(no)+'</b>'+proj+'</td>'+
+        '<td><b class="clickable" style="cursor:pointer;color:#60a5fa" onclick="fhkUnpaidGoCustomer(\''+b.customerId+'\')">'+H(nm)+'</b></td>'+
+        '<td>'+H(period)+'</td>'+
+        '<td class="num">'+money(amt)+'</td>'+
+        '<td><span style="color:#fbbf24">'+payLabel(b.payment)+'</span></td>'+
+        '</tr>';
+    }).join('');
+    const body =
+      '<div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">'+
+        '<div class="stat"><div class="label">기간</div><div class="value" style="font-size:15px">'+mr.s+'<br>~ '+mr.e+'</div></div>'+
+        '<div class="stat"><div class="label">미수 건수</div><div class="value">'+list.length+'</div></div>'+
+        '<div class="stat"><div class="label">미수 합계</div><div class="value" style="font-size:18px;color:#fbbf24">'+money(totalUnpaid)+'</div></div>'+
+      '</div>'+
+      (list.length
+        ? '<div class="data-wrap"><table><thead><tr><th>예약번호</th><th>고객</th><th>대여기간</th><th>금액</th><th>입금상태</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        : '<div class="empty">이번달 미수 예약이 없습니다.</div>');
+    $('fhkUnpaidBody').innerHTML = body;
+    if(typeof openModal==='function') openModal('fhkUnpaidModal');
+    else $('fhkUnpaidModal').classList.add('active');
+  };
+
+  window.fhkUnpaidGoBooking = function(id){
+    try{ closeModal('fhkUnpaidModal'); }catch(_){}
+    try{ if(typeof openBookingModal==='function'){ openBookingModal(id); return; } }catch(_){}
+    try{ if(typeof openBookingDetail==='function') openBookingDetail(id); }catch(_){}
+  };
+  window.fhkUnpaidGoCustomer = function(id){
+    try{ closeModal('fhkUnpaidModal'); }catch(_){}
+    try{ if(typeof showCustomerHistory==='function'){ showCustomerHistory(id); return; } }catch(_){}
+    try{ if(typeof openCustomerHistory==='function') openCustomerHistory(id); }catch(_){}
+  };
+
+  /* 대시보드의 '이번달 미수금' stat 카드를 클릭 가능하게 만든다 */
+  function makeUnpaidClickable(){
+    const ds = $('dashStats'); if(!ds) return;
+    [...ds.querySelectorAll('.stat')].forEach(card=>{
+      const label = card.querySelector('.label');
+      if(!label) return;
+      const txt = (label.textContent||'').replace(/\s+/g,'');
+      if(txt.includes('미수') && !card.__fhkUnpaidBound){
+        card.__fhkUnpaidBound = true;
+        card.style.cursor = 'pointer';
+        card.title = '클릭하면 미수 예약 목록을 봅니다';
+        // 시각적 힌트
+        if(!card.querySelector('.fhk-v241-hint')){
+          const sub = card.querySelector('.sub');
+          if(sub){ const span=document.createElement('span'); span.className='fhk-v241-hint'; span.style.cssText='display:block;font-size:10px;color:#60a5fa;margin-top:2px'; span.textContent='▸ 클릭하여 목록 보기'; sub.appendChild(span); }
+        }
+        card.addEventListener('click', ()=>window.fhkOpenUnpaidModal());
+      }
+    });
+  }
+
+  // 대시보드가 다시 그려질 때마다 클릭 바인딩
+  (function observe(){
+    const ds = $('dashStats');
+    if(ds && 'MutationObserver' in window){
+      try{ new MutationObserver(()=>setTimeout(makeUnpaidClickable,0)).observe(ds,{childList:true,subtree:true}); }catch(_){}
+    }
+  })();
+  const _osp = window.showPanel;
+  if(typeof _osp==='function'){
+    window.showPanel = function(id){ const r=_osp.apply(this,arguments); if(id==='dashboard'){[60,300,800].forEach(t=>setTimeout(makeUnpaidClickable,t));} return r; };
+    try{ showPanel=window.showPanel; }catch(_){}
+  }
+  [1000,2200].forEach(t=>setTimeout(makeUnpaidClickable,t));
+})();
+</script>
+
+<script id="fhk-v242-basic-comp-adjust-script">
+/*
+  v242 — 예약 시 기본구성품 수량 조정 & 슬롯 제외
+   · 기본구성품 선택 모달의 각 슬롯 카드에:
+       (a) "이 예약 수량" 입력 — 기본 필요수량을 이 예약에서만 늘리거나 줄임 (예: 배터리 4개)
+       (b) "이 예약에서 제외" 체크 — 해당 구성품을 빼고 '부족' 경고도 끔 (예: 메모리 불필요)
+   · 조정/제외 값은 예약별로 저장되어, 부족 판정과 견적 비고에 반영된다.
+  ※ 이 블록만 지우면 기능이 제거된다. (조정 데이터는 남지만 무해)
+*/
+(function(){
+  if(window.__fhkV242BasicAdjust) return;
+  window.__fhkV242BasicAdjust = true;
+
+  const $ = id => document.getElementById(id);
+  const N = v => String(v??'').replace(/\s+/g,' ').trim();
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+  // 예약별 슬롯 조정 저장소: { [eqId]: { [slotName]: {qty:Number, excluded:Bool} } }
+  window.__fhkBasicSlotAdjust = window.__fhkBasicSlotAdjust || {};
+  function adjustFor(eqId){
+    window.__fhkBasicSlotAdjust[eqId] = window.__fhkBasicSlotAdjust[eqId] || {};
+    return window.__fhkBasicSlotAdjust[eqId];
+  }
+
+  /* ---------- 부족 판정 래핑: 제외 슬롯은 부족 아님, 조정 수량 반영 ---------- */
+  (function wrapShortage(){
+    const prev = window.basicHasShortage || (typeof basicHasShortage==='function'?basicHasShortage:null);
+    if(typeof prev!=='function' || prev.__fhkV242Wrapped) return;
+    // basicHasShortage 는 내부 클로저라 전역에 없을 수 있음 → 전역에 있을 때만 래핑.
+  })();
+
+  /* ---------- 기본구성품 모달 열릴 때 슬롯 카드에 컨트롤 주입 ---------- */
+  function decorateBasicPickModal(eqId){
+    const body = $('fhkV125BasicBody');
+    if(!body) return;
+    const adj = adjustFor(eqId);
+    const cards = [...body.querySelectorAll('.card')];
+    cards.forEach(card=>{
+      if(card.querySelector('.fhk-v242-controls')) return; // 이미 주입됨
+      // 슬롯명: 카드 내 체크박스의 data-basic-slot 에서 추출
+      const anyInput = card.querySelector('input[data-basic-slot]');
+      const slotName = anyInput ? anyInput.getAttribute('data-basic-slot') : N((card.querySelector('h4')||{}).textContent).split(' ')[0];
+      if(!slotName) return;
+      const baseReq = anyInput ? (Number(anyInput.getAttribute('data-basic-required'))||1) : 1;
+      const saved = adj[slotName] || {};
+      const curQty = (saved.qty!=null) ? saved.qty : baseReq;
+      const excluded = !!saved.excluded;
+
+      // 컨트롤 박스
+      const ctl = document.createElement('div');
+      ctl.className = 'fhk-v242-controls';
+      ctl.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;padding:8px 10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:8px;';
+      ctl.innerHTML =
+        '<label style="display:flex;gap:6px;align-items:center;font-size:13px">이 예약 수량 '+
+        '<input type="number" min="0" step="1" class="fhk-v242-qty" value="'+curQty+'" style="width:64px;padding:3px 6px"></label>'+
+        '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:#fbbf24">'+
+        '<input type="checkbox" class="fhk-v242-exclude" '+(excluded?'checked':'')+'> 이 예약에서 제외 (필요 없음)</label>'+
+        '<span class="fhk-v242-status" style="font-size:11px;color:#9ca3af"></span>';
+      // 카드 제목 바로 뒤(설명 위)에 삽입
+      const h4 = card.querySelector('h4');
+      if(h4 && h4.nextSibling) card.insertBefore(ctl, h4.nextSibling);
+      else card.insertBefore(ctl, card.firstChild);
+
+      const qtyInput = ctl.querySelector('.fhk-v242-qty');
+      const exInput = ctl.querySelector('.fhk-v242-exclude');
+      const status = ctl.querySelector('.fhk-v242-status');
+      const slotInputs = [...card.querySelectorAll('input[data-basic-slot]')];
+
+      function applyState(){
+        const q = Math.max(0, Number(qtyInput.value)||0);
+        const ex = exInput.checked;
+        // 저장
+        adj[slotName] = { qty:q, excluded:ex };
+        // 체크박스 상한 갱신 (data-basic-required 를 새 수량으로)
+        slotInputs.forEach(inp=>{ inp.setAttribute('data-basic-required', String(q)); });
+        // 제외면 체크 모두 해제 + 비활성화
+        if(ex){
+          slotInputs.forEach(inp=>{ inp.checked=false; inp.disabled=true; });
+          qtyInput.disabled = true;
+          status.textContent = '제외됨 (부족 경고 안 뜸)';
+          status.style.color = '#fbbf24';
+        }else{
+          slotInputs.forEach(inp=>{ inp.disabled=false; });
+          qtyInput.disabled = false;
+          const checkedCount = slotInputs.filter(i=>i.checked).length;
+          status.textContent = '선택 '+checkedCount+' / 필요 '+q+'개';
+          status.style.color = checkedCount>=q ? '#34d399' : '#9ca3af';
+          // 카드 제목의 "필요 N개" 표기 갱신
+          const small = card.querySelector('h4 small');
+          if(small) small.textContent = '필요 '+q+'개 · 현재 '+checkedCount+'개';
+        }
+      }
+      qtyInput.addEventListener('input', applyState);
+      qtyInput.addEventListener('change', applyState);
+      exInput.addEventListener('change', applyState);
+      // 체크박스 변화 시 상태 텍스트 갱신
+      slotInputs.forEach(inp=> inp.addEventListener('change', ()=>{ if(!exInput.checked) applyState(); }));
+      applyState();
+    });
+  }
+
+  // openBasicComponentSelector 후킹: 모달 표시 직후 컨트롤 주입
+  (function wrapOpen(){
+    const prev = window.openBasicComponentSelector;
+    if(typeof prev!=='function' || prev.__fhkV242Wrapped) return;
+    const wrapped = function(eqId){
+      const r = prev.apply(this, arguments);
+      window.__fhkV242CurrentEqId = eqId;
+      [0,60,160].forEach(t=>setTimeout(()=>decorateBasicPickModal(eqId), t));
+      return r;
+    };
+    wrapped.__fhkV242Wrapped = true;
+    window.openBasicComponentSelector = wrapped;
+    try{ openBasicComponentSelector = wrapped; }catch(_){}
+  })();
+
+  // 적용(구성 반영) 시 제외 슬롯/조정 수량을 예약 데이터에도 보존
+  (function wrapApply(){
+    const prev = window.fhkV125ApplyBasicComp;
+    if(typeof prev!=='function' || prev.__fhkV242Wrapped) return;
+    const wrapped = function(){
+      const eqId = window.__fhkV125EditingBasicId || window.__fhkV242CurrentEqId;
+      const r = prev.apply(this, arguments);
+      // 조정 정보는 window.__fhkBasicSlotAdjust 에 이미 저장됨. 예약 저장 시 함께 직렬화되도록 표식만 남긴다.
+      try{
+        if(eqId && window.__fhkBasicSlotAdjust[eqId]){
+          window.__fhkPendingSlotAdjust = window.__fhkPendingSlotAdjust || {};
+          window.__fhkPendingSlotAdjust[eqId] = window.__fhkBasicSlotAdjust[eqId];
+        }
+      }catch(_){}
+      return r;
+    };
+    wrapped.__fhkV242Wrapped = true;
+    window.fhkV125ApplyBasicComp = wrapped;
+    try{ fhkV125ApplyBasicComp = wrapped; }catch(_){}
+  })();
+
+  // 모달 본문이 다시 그려질 때(그룹핑 등) 컨트롤 재주입
+  (function observe(){
+    const body = $('fhkV125BasicBody');
+    // body 는 동적으로 생성되므로, 문서 전체에서 모달 등장을 관찰
+    if('MutationObserver' in window){
+      try{
+        new MutationObserver(()=>{
+          const m = $('fhkV125BasicPickModal');
+          if(m && m.classList.contains('active') && window.__fhkV242CurrentEqId){
+            if(!window.__fhkV242Decorating){
+              window.__fhkV242Decorating = true;
+              decorateBasicPickModal(window.__fhkV242CurrentEqId);
+              window.__fhkV242Decorating = false;
+            }
+          }
+        }).observe(document.body, {childList:true, subtree:true});
+      }catch(_){}
+    }
+  })();
+})();
+</script>
+
+<script id="fhk-v243-mobile-contract-zoom-script">
+/*
+  v243 — 모바일에서 임대차계약서/견적서 미리보기 화면 맞춤 + 핀치 줌
+   · 모바일 폭에서 계약서(.quote-doc)가 잘리지 않도록 원래 폭 그대로 그린 뒤
+     화면 폭에 맞게 축소(transform:scale)해서 전체가 보이게 한다.
+   · 두 손가락(핀치)으로 확대/축소하고, 확대 상태에서 한 손가락으로 이동(패닝) 가능.
+   · 더블탭으로 1배↔맞춤 토글. 인쇄(PDF)에는 영향 없음(스케일 해제).
+  ※ 이 블록만 지우면 기능이 제거된다. PC(넓은 화면)에서는 동작하지 않는다.
+*/
+(function(){
+  if(window.__fhkV243MobileZoom) return;
+  window.__fhkV243MobileZoom = true;
+
+  const MOBILE_MAX = 820;       // 이 폭 이하에서만 동작
+  const DOC_BASE_WIDTH = 900;   // 계약서 기준 폭(.quote-doc max-width 근처)
+
+  function isMobile(){ return window.innerWidth <= MOBILE_MAX; }
+
+  // 스타일 주입
+  (function injectCss(){
+    if(document.getElementById('fhkV243Style')) return;
+    const st = document.createElement('style');
+    st.id = 'fhkV243Style';
+    st.textContent =
+      '.fhk-v243-stage{position:relative;width:100%;overflow:hidden;touch-action:none;-webkit-overflow-scrolling:touch;}'+
+      '.fhk-v243-stage .quote-doc{transform-origin:0 0;will-change:transform;}'+
+      '.fhk-v243-hint{font-size:12px;color:#9ca3af;text-align:center;margin:6px 0 10px;}'+
+      '@media print{.fhk-v243-stage{overflow:visible!important;height:auto!important;}'+
+      '.fhk-v243-stage .quote-doc{transform:none!important;}}';
+    document.head.appendChild(st);
+  })();
+
+  const state = { scale:1, fit:1, tx:0, ty:0, baseW:DOC_BASE_WIDTH, baseH:0 };
+
+  function getDoc(){ return document.querySelector('#quoteContent .quote-doc'); }
+
+  function apply(stage, doc){
+    doc.style.transform = 'translate('+state.tx+'px,'+state.ty+'px) scale('+state.scale+')';
+    // 스테이지 높이를 스케일된 문서 높이에 맞춤
+    const h = state.baseH * state.scale + state.ty;
+    stage.style.height = Math.max(0, h) + 'px';
+  }
+
+  function setup(){
+    if(!isMobile()) return;
+    const doc = getDoc();
+    if(!doc) return;
+    // 이미 감싸져 있으면 재계산만
+    let stage = doc.closest('.fhk-v243-stage');
+    if(!stage){
+      // 계약서를 원래 폭으로 강제(축소 전 기준)
+      doc.style.maxWidth = DOC_BASE_WIDTH + 'px';
+      doc.style.width = DOC_BASE_WIDTH + 'px';
+      stage = document.createElement('div');
+      stage.className = 'fhk-v243-stage';
+      doc.parentNode.insertBefore(stage, doc);
+      stage.appendChild(doc);
+      // 안내 힌트
+      const hint = document.createElement('div');
+      hint.className = 'fhk-v243-hint no-print';
+      hint.textContent = '두 손가락으로 확대 · 더블탭으로 원래대로';
+      stage.parentNode.insertBefore(hint, stage);
+      attachGestures(stage, doc);
+    }
+    // 기준 크기 측정 (스케일 1 기준)
+    const prevTransform = doc.style.transform;
+    doc.style.transform = 'none';
+    state.baseW = doc.offsetWidth || DOC_BASE_WIDTH;
+    state.baseH = doc.offsetHeight || 0;
+    doc.style.transform = prevTransform;
+    // 화면 폭에 맞춘 fit 배율
+    const avail = stage.clientWidth || window.innerWidth;
+    state.fit = Math.min(1, avail / state.baseW);
+    state.scale = state.fit;
+    state.tx = 0; state.ty = 0;
+    apply(stage, doc);
+  }
+
+  function clamp(stage, doc){
+    // 패닝 범위 제한 (확대 시 빈 영역 과도 노출 방지)
+    const scaledW = state.baseW * state.scale;
+    const scaledH = state.baseH * state.scale;
+    const availW = stage.clientWidth || window.innerWidth;
+    const minTx = Math.min(0, availW - scaledW);
+    state.tx = Math.max(minTx, Math.min(0, state.tx));
+    if(scaledH <= (stage.clientHeight||scaledH)) state.ty = Math.min(0, state.ty);
+    state.ty = Math.min(0, state.ty);
+  }
+
+  function attachGestures(stage, doc){
+    let mode = null;          // 'pan' | 'pinch'
+    let startDist = 0, startScale = 1;
+    let startMidX = 0, startMidY = 0;
+    let startTx = 0, startTy = 0;
+    let lastTapTime = 0;
+
+    function dist(t){ const dx=t[0].clientX-t[1].clientX, dy=t[0].clientY-t[1].clientY; return Math.hypot(dx,dy); }
+    function mid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
+
+    stage.addEventListener('touchstart', e=>{
+      if(e.touches.length===2){
+        mode='pinch';
+        startDist=dist(e.touches); startScale=state.scale;
+        const m=mid(e.touches); const r=stage.getBoundingClientRect();
+        startMidX=m.x-r.left; startMidY=m.y-r.top;
+        startTx=state.tx; startTy=state.ty;
+        e.preventDefault();
+      } else if(e.touches.length===1){
+        mode = state.scale > state.fit + 0.01 ? 'pan' : null;
+        startMidX=e.touches[0].clientX; startMidY=e.touches[0].clientY;
+        startTx=state.tx; startTy=state.ty;
+        // 더블탭 감지
+        const now=Date.now();
+        if(now-lastTapTime < 300){
+          // 토글: fit ↔ 2배(또는 1배)
+          if(state.scale > state.fit + 0.01){ state.scale=state.fit; state.tx=0; state.ty=0; }
+          else { state.scale=Math.min(2.5, state.fit*2.2); }
+          clamp(stage, doc); apply(stage, doc);
+          lastTapTime=0; e.preventDefault(); return;
+        }
+        lastTapTime=now;
+      }
+    }, {passive:false});
+
+    stage.addEventListener('touchmove', e=>{
+      if(mode==='pinch' && e.touches.length===2){
+        const d=dist(e.touches);
+        let ns = startScale * (d/startDist);
+        ns = Math.max(state.fit, Math.min(3, ns));
+        // 핀치 중심 기준 확대
+        const ratio = ns/startScale;
+        state.scale = ns;
+        state.tx = startMidX - (startMidX - startTx)*ratio;
+        state.ty = startMidY - (startMidY - startTy)*ratio;
+        clamp(stage, doc); apply(stage, doc);
+        e.preventDefault();
+      } else if(mode==='pan' && e.touches.length===1){
+        state.tx = startTx + (e.touches[0].clientX - startMidX);
+        state.ty = startTy + (e.touches[0].clientY - startMidY);
+        clamp(stage, doc); apply(stage, doc);
+        e.preventDefault();
+      }
+    }, {passive:false});
+
+    stage.addEventListener('touchend', e=>{
+      if(e.touches.length===0) mode=null;
+    });
+  }
+
+  // 견적 렌더 후/탭 진입/리사이즈 시 재설정
+  function refresh(){ setTimeout(setup, 60); setTimeout(setup, 250); }
+
+  (function wrapRenders(){
+    ['renderQuote'].forEach(name=>{
+      const prev = window[name];
+      if(typeof prev==='function' && !prev.__fhkV243Wrapped){
+        const w=function(){ const r=prev.apply(this,arguments); refresh(); return r; };
+        w.__fhkV243Wrapped=true; window[name]=w; try{ eval(name+'=window[name]'); }catch(_){}
+      }
+    });
+  })();
+  const _osp=window.showPanel;
+  if(typeof _osp==='function'){
+    window.showPanel=function(id){ const r=_osp.apply(this,arguments); if(id==='quotes') refresh(); return r; };
+    try{ showPanel=window.showPanel; }catch(_){}
+  }
+  window.addEventListener('resize', ()=>{ if(isMobile()) refresh(); });
+  // quoteContent 변경 관찰
+  (function observe(){
+    const qc=document.getElementById('quoteContent');
+    if(qc && 'MutationObserver' in window){
+      try{ new MutationObserver(()=>{ if(isMobile() && !document.querySelector('#quoteContent .fhk-v243-stage .quote-doc')) refresh(); }).observe(qc,{childList:true,subtree:true}); }catch(_){}
+    }
+  })();
+  refresh();
 })();
 </script>
 
