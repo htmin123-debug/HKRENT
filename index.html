@@ -3137,6 +3137,8 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function itemRows(b,p){
     /* v209: accessories 별도행 제거 / 비고에 serial + 구성품 */
+    /* v239: 같은 모델(이름·단가·구분 동일)을 한 행으로 통합. 수량=대수,
+       비고에는 각 개체의 시리얼과 구성품을 줄바꿈으로 나열. */
     function compNote(id){
       const _eq=i=>(window.state||state).equipment&&(window.state||state).equipment.find(e=>e.id===i);
       const ids=[];
@@ -3146,17 +3148,35 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       if(bcs)Object.values(bcs).forEach(arr=>{(Array.isArray(arr)?arr:Object.values(arr||{})).forEach(x=>ids.push(x));});
       return [...new Set(ids)].filter(Boolean).map(bid=>{const e=_eq(bid);return e?e.name+(e.serial?' #'+e.serial:''):bid;}).filter(Boolean).join(', ');
     }
-    const rows=[];
-    (b.equipmentIds||[]).forEach((id,i)=>{
+    // 같은 모델끼리 그룹화 (등장 순서 유지)
+    const groups=[];
+    const indexByKey={};
+    (b.equipmentIds||[]).forEach(id=>{
       const e=eObj(id);
-      const amount=(Number(e.rate)||0)*(Number(p.days)||1);
-      const serialPart=e.serial?'#'+e.serial:'';
-      const notePart=e.note||serialPart||'';
-      const compPart=compNote(id);
-      const noteHTML=notePart&&compPart?h(notePart)+'<br><small style="color:#9ca3af">'+h(compPart)+'</small>'
-                    :notePart?h(notePart)
-                    :compPart?'<small style="color:#9ca3af">'+h(compPart)+'</small>':'';
-      rows.push(`<tr><td>${i+1}</td><td class="item-name" colspan="4">${h(e.name||'')}</td><td>${h(e.category||'')}</td><td>1</td><td>${p.days}</td><td class="num">${won(e.rate||0)}</td><td class="num">${won(amount)}</td><td class="note" colspan="2">${noteHTML}</td></tr>`);
+      const key=(e.name||'')+'||'+(e.category||'')+'||'+(Number(e.rate)||0);
+      if(indexByKey[key]===undefined){ indexByKey[key]=groups.length; groups.push({e:e, key:key, ids:[]}); }
+      groups[indexByKey[key]].ids.push(id);
+    });
+
+    const rows=[];
+    groups.forEach((g,gi)=>{
+      const e=g.e;
+      const qty=g.ids.length;
+      const amount=(Number(e.rate)||0)*(Number(p.days)||1)*qty;
+      // 각 개체별 비고 줄: "시리얼 (구성품: ...)" — 여러 대면 줄바꿈
+      const lines=g.ids.map(id=>{
+        const ie=eObj(id);
+        const serial=ie.serial?'#'+ie.serial:'';
+        const comp=compNote(id);
+        const head=(ie.note||serial||'').toString().trim();
+        let line=h(head);
+        if(comp){
+          line += (head?' ':'')+'<small style="color:#9ca3af">'+(head?'· ':'')+'구성품: '+h(comp)+'</small>';
+        }
+        return line || '<small style="color:#9ca3af">-</small>';
+      });
+      const noteHTML=lines.join('<br>');
+      rows.push(`<tr data-fhk-v239-merged="1"><td>${gi+1}</td><td class="item-name" colspan="4">${h(e.name||'')}</td><td>${h(e.category||'')}</td><td>${qty}</td><td>${p.days}</td><td class="num">${won(e.rate||0)}</td><td class="num">${won(amount)}</td><td class="note" colspan="2" data-fhk-v239-note="1">${noteHTML}</td></tr>`);
     });
     while(rows.length<8){const n=rows.length+1;rows.push(`<tr><td>${n}</td><td colspan="4">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td colspan="2"></td></tr>`);}
     return rows.join('');
@@ -4270,7 +4290,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
     try{
       const id=val('quoteBooking'); const b=state.bookings.find(x=>x.id===id); if(!b||!b.setComponents) return;
       const rows=document.querySelectorAll('#quoteContent .quote-doc tbody tr');
-      (b.equipmentIds||[]).forEach((eid,i)=>{ if(!isSetEquipment(eid)) return; const txt=setComponentText(b,eid); if(!txt) return; const row=rows[i]; const cells=row?row.querySelectorAll('td'):[]; if(cells&&cells[7]) cells[7].innerHTML=(cells[7].innerHTML?cells[7].innerHTML+'<br>':'')+'세트 구성: '+esc(txt); });
+      (b.equipmentIds||[]).forEach((eid,i)=>{ if(!isSetEquipment(eid)) return; const txt=setComponentText(b,eid); if(!txt) return; const row=rows[i]; if(row&&row.getAttribute('data-fhk-v239-merged')==='1')return; const cells=row?row.querySelectorAll('td'):[]; if(cells&&cells[7]) cells[7].innerHTML=(cells[7].innerHTML?cells[7].innerHTML+'<br>':'')+'세트 구성: '+esc(txt); });
     }catch(e){console.warn('[FILM HK '+VERSION+'] quote component patch warning',e)}
   };
   try{renderQuote=window.renderQuote}catch(e){}
@@ -4499,7 +4519,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       const id=V('quoteBooking'); const b=(state.bookings||[]).find(x=>x.id===id); if(!b) return;
       const groups=b.setComponents || flatSetGroups(b.setComponentGroups||{});
       const rows=document.querySelectorAll('#quoteContent .quote-doc tbody tr');
-      (b.equipmentIds||[]).forEach((eid,i)=>{ if(!isSetEquipment(eid)) return; const txt=(groups[eid]||[]).map(equipmentName).filter(Boolean).join(', '); if(!txt) return; const row=rows[i]; const cells=row?row.querySelectorAll('td'):[]; const target=cells[cells.length-1]; if(target&&!target.innerHTML.includes('세트 구성:')) target.innerHTML=(target.innerHTML?target.innerHTML+'<br>':'')+'세트 구성: '+E(txt); });
+      (b.equipmentIds||[]).forEach((eid,i)=>{ if(!isSetEquipment(eid)) return; const txt=(groups[eid]||[]).map(equipmentName).filter(Boolean).join(', '); if(!txt) return; const row=rows[i]; if(row&&row.getAttribute('data-fhk-v239-merged')==='1')return; const cells=row?row.querySelectorAll('td'):[]; const target=cells[cells.length-1]; if(target&&!target.innerHTML.includes('세트 구성:')) target.innerHTML=(target.innerHTML?target.innerHTML+'<br>':'')+'세트 구성: '+E(txt); });
     }catch(e){}
   };
   try{renderQuote=window.renderQuote}catch(e){}
@@ -4665,7 +4685,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       document.querySelectorAll('#quoteContent .quote-doc table:not(.fhk-items) td').forEach(td=>{td.innerHTML=td.innerHTML.replace(/<br>\s*세트 구성:[\s\S]*?(?=<br>|$)/g,'').replace(/세트 구성:[\s\S]*$/g,'');});
       const id=$('quoteBooking')?.value||''; const b=(S().bookings||[]).find(x=>x.id===id); if(!b) return;
       const rows=document.querySelectorAll('#quoteContent .quote-doc table.fhk-items tbody tr');
-      (b.equipmentIds||[]).forEach((eid,i)=>{ const txt=setCompText(b,eid); if(!txt) return; const row=rows[i]; const cells=row?row.querySelectorAll('td'):[]; const target=cells[cells.length-1]; if(target && !target.textContent.includes('세트 구성:')) target.innerHTML=(target.innerHTML?target.innerHTML+'<br>':'')+'세트 구성: '+H(txt); });
+      (b.equipmentIds||[]).forEach((eid,i)=>{ const txt=setCompText(b,eid); if(!txt) return; const row=rows[i]; if(row&&row.getAttribute('data-fhk-v239-merged')==='1')return; const cells=row?row.querySelectorAll('td'):[]; const target=cells[cells.length-1]; if(target && !target.textContent.includes('세트 구성:')) target.innerHTML=(target.innerHTML?target.innerHTML+'<br>':'')+'세트 구성: '+H(txt); });
     }catch(e){console.warn('[FILM HK '+VERSION+'] quote guard',e)}
   };
   try{renderQuote=window.renderQuote}catch(e){}
@@ -13591,6 +13611,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
     var tbody=qc.querySelector('table.fhk-items tbody'); if(!tbody) return;
     var mainIds=b.equipmentIds||[];
     Array.from(tbody.querySelectorAll('tr')).forEach(function(tr){
+      if(tr.getAttribute('data-fhk-v239-merged')==='1') return; // v239 통합 행은 건너뜀
       var num=Number(((tr.cells[0]&&tr.cells[0].textContent)||'').trim());
       if(!num||num>mainIds.length) return;
       var eqId=mainIds[num-1]; if(!eqId) return;
@@ -16424,11 +16445,16 @@ else{bump();injectGroupCard();}
       return tr.cells && tr.cells.length>=8;
     });
 
+    // v239: 통합 행이 하나라도 있으면, equipmentIds 1:1 매핑이 깨지므로 v211 비고 덮어쓰기를 전면 생략
+    if(rows.some(tr=>tr.getAttribute('data-fhk-v239-merged')==='1')) return;
+
     (b.equipmentIds||[]).forEach((eid,i)=>{
       const tr=rows[i];
       if(!tr) return;
       const noteCell=tr.querySelector('td.note') || tr.cells[tr.cells.length-1];
       if(!noteCell) return;
+      // v239: 통합(merged) 행은 v239 가 비고를 직접 채우므로 건너뛴다
+      if(tr.getAttribute('data-fhk-v239-merged')==='1' || noteCell.getAttribute('data-fhk-v239-note')==='1') return;
 
       const lines=remarkLinesFor(b,eid);
       noteCell.innerHTML=lines.length
@@ -19375,7 +19401,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v237';
+  const DISPLAY_VERSION = 'v240';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -19922,6 +19948,251 @@ else{bump();injectGroupCard();}
   }
   // 최초 부팅 보정
   [800, 1600, 2600].forEach(t=>setTimeout(applyBoth,t));
+})();
+</script>
+
+<script id="fhk-v240-internal-shoot-script">
+/*
+  v240 — 자체 촬영(내부 대여) 표시 + 촬영명
+   · 예약 모달에 "자체 촬영(매출 제외)" 체크박스와 "촬영명" 입력칸을 추가한다.
+   · 자체 촬영으로 표시한 예약은 견적서 금액은 그대로 보이되,
+     대시보드/통계의 매출·미수 합계에서 제외된다(추가할인 0원 우회 불필요).
+   · 촬영명을 입력하면 예약 목록·견적 선택 등에 "FILM HK (홍대 스케치)"처럼 표시된다.
+  ※ 이 블록만 지우면 기능이 깔끔히 제거된다. 데이터(internal, projectName)는 남지만 무해.
+*/
+(function(){
+  if(window.__fhkV240InternalShoot) return;
+  window.__fhkV240InternalShoot = true;
+
+  const $ = id => document.getElementById(id);
+  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
+  const N = v => String(v??'').replace(/\s+/g,' ').trim();
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const saveNow = () => {
+    try{ if(typeof save==='function') return save(); }catch(_){}
+    try{ localStorage.setItem('filmhk_rental_v2', JSON.stringify(S())); }catch(_){}
+  };
+  const findBooking = id => (S().bookings||[]).find(b=>b&&b.id===id) || null;
+  const isInternal = b => !!(b && b.internal);
+
+  /* ---------- (1) 매출 제외: priceBreakdown 래핑 ----------
+     자체 촬영 예약은 매출 집계용 합계를 0으로 만든다.
+     단, 견적서는 원가가 보여야 하므로 원본 값을 base0/total0 로 따로 보관한다. */
+  (function wrapPrice(){
+    const prev = window.priceBreakdown || (typeof priceBreakdown==='function'?priceBreakdown:null);
+    if(typeof prev !== 'function' || prev.__fhkV240Wrapped) return;
+    const wrapped = function(b){
+      const p = prev.apply(this, arguments) || {};
+      // 원가는 항상 보존 (견적서에서 사용)
+      p.grossTotal = p.total;
+      p.grossBase  = p.base;
+      // 자체 촬영이면 매출/미수 집계에서 빠지도록 total/vat 을 0 으로
+      if(b && b.internal){
+        p.revenueExcluded = true;
+        p.total = 0;
+        p.vat = 0;
+      }
+      return p;
+    };
+    wrapped.__fhkV240Wrapped = true;
+    // 원본을 보관해 견적서 전용 계산에 사용
+    window.__fhkV240GrossPrice = function(b){ return prev.apply(null,[b]); };
+    window.priceBreakdown = wrapped;
+    try{ priceBreakdown = wrapped; }catch(_){}
+  })();
+
+  /* ---------- 견적서는 원가로 그리도록 보정 ----------
+     priceBreakdown 이 0을 돌려줘도 견적서 금액은 원가로 표시되어야 한다.
+     renderQuote 직후, 견적 품목/합계가 0이면 원가 기준으로 다시 채운다. */
+  function fixQuoteGrossAmounts(){
+    try{
+      const qc = $('quoteContent'); if(!qc) return;
+      const sel = $('quoteBooking'); const b = sel ? findBooking(sel.value) : null;
+      if(!b || !b.internal) return;
+      // 견적서는 원가를 보여주기 위해, 내부 플래그를 잠시 끄고 다시 렌더
+      // (간단·안전하게: 임시로 internal 해제 → renderQuote → 복원)
+      if(window.__fhkV240QuoteFixing) return;
+      window.__fhkV240QuoteFixing = true;
+      const keep = b.internal;
+      b.internal = false;
+      try{ if(typeof window.renderQuote==='function') window.renderQuote(); }catch(_){}
+      b.internal = keep;
+      window.__fhkV240QuoteFixing = false;
+    }catch(_){ window.__fhkV240QuoteFixing = false; }
+  }
+
+  /* ---------- (2) 예약 모달 UI: 자체촬영 체크 + 촬영명 ---------- */
+  function ensureModalFields(){
+    const noteRow = (()=>{
+      const ta = $('bkNote'); if(!ta) return null;
+      // bkNote 를 감싼 .form-row
+      let el = ta; while(el && !(el.classList&&el.classList.contains('form-row'))) el = el.parentElement;
+      return el;
+    })();
+    if(!noteRow) return;
+    if($('bkProjectName') && $('bkInternal')) return; // 이미 추가됨
+
+    // 촬영명 입력 행
+    if(!$('bkProjectName')){
+      const row = document.createElement('div');
+      row.className = 'form-row';
+      row.innerHTML = '<label>촬영명</label><input id="bkProjectName" type="text" placeholder="예: 홍대 스케치 (선택)">';
+      noteRow.parentNode.insertBefore(row, noteRow);
+    }
+    // 자체 촬영 체크
+    if(!$('bkInternal')){
+      const wrap = document.createElement('label');
+      wrap.style.cssText = 'display:flex;gap:8px;align-items:center;margin:8px 0;color:#fbbf24';
+      wrap.innerHTML = '<input id="bkInternal" type="checkbox"> 자체 촬영 (매출 제외 · 견적 금액은 표시)';
+      noteRow.parentNode.insertBefore(wrap, noteRow);
+    }
+  }
+
+  // 모달이 열릴 때 기존 예약의 값으로 채우기
+  function hydrateModal(id){
+    ensureModalFields();
+    const b = id ? findBooking(id) : null;
+    const pn = $('bkProjectName'); const ic = $('bkInternal');
+    if(pn) pn.value = b && b.projectName ? b.projectName : '';
+    if(ic) ic.checked = !!(b && b.internal);
+  }
+
+  // openBookingModal 후킹: 필드 준비 + 채우기
+  (function wrapOpen(){
+    const prev = window.openBookingModal;
+    if(typeof prev !== 'function' || prev.__fhkV240Wrapped) return;
+    const wrapped = function(id, presetDate){
+      const r = prev.apply(this, arguments);
+      setTimeout(()=>hydrateModal(id), 0);
+      setTimeout(()=>hydrateModal(id), 80);
+      return r;
+    };
+    wrapped.__fhkV240Wrapped = true;
+    window.openBookingModal = wrapped;
+    try{ openBookingModal = wrapped; }catch(_){}
+  })();
+
+  // saveBooking 후킹: 모달의 촬영명/자체촬영을 저장 대상 예약에 기록
+  (function wrapSave(){
+    const prev = window.saveBooking;
+    if(typeof prev !== 'function' || prev.__fhkV240Wrapped) return;
+    const wrapped = function(){
+      const editingId = ($('bkId')||{}).value || '';
+      const pn = $('bkProjectName') ? N($('bkProjectName').value) : '';
+      const ic = $('bkInternal') ? !!$('bkInternal').checked : false;
+      const beforeIds = new Set((S().bookings||[]).map(b=>b.id));
+      const r = prev.apply(this, arguments);
+      const apply = ()=>{
+        try{
+          const st = S();
+          const target = editingId
+            ? (st.bookings||[]).find(b=>b.id===editingId)
+            : (st.bookings||[]).slice().reverse().find(b=>!beforeIds.has(b.id));
+          if(target){
+            target.projectName = pn;
+            target.internal = ic;
+            saveNow();
+            try{ if(typeof renderDashboard==='function') renderDashboard(); }catch(_){}
+            try{ if(typeof renderBookings==='function') renderBookings(); }catch(_){}
+          }
+        }catch(_){}
+      };
+      if(r && typeof r.then==='function'){ r.then(()=>setTimeout(apply,60)); }
+      else { setTimeout(apply, 80); }
+      return r;
+    };
+    wrapped.__fhkV240Wrapped = true;
+    window.saveBooking = wrapped;
+    try{ saveBooking = wrapped; }catch(_){}
+  })();
+
+  /* ---------- (3) 예약 목록·견적 선택에 촬영명/자체촬영 배지 표시 ---------- */
+  function labelText(b){
+    const parts = [];
+    if(b.internal) parts.push('자체촬영');
+    if(b.projectName) parts.push(b.projectName);
+    return parts.length ? 'FILM HK ('+parts.join(' · ')+')' : '';
+  }
+  function decorateBookingRows(){
+    const tbody = document.querySelector('#bookingsTable table tbody');
+    if(!tbody) return;
+    [...tbody.querySelectorAll('tr')].forEach(tr=>{
+      // 예약번호 셀(보통 두 번째 셀)에 촬영명 배지 부착
+      if(tr.querySelector('.fhk-v240-badge')) return;
+      const txt = tr.textContent || '';
+      const m = txt.match(/R-\d{6}-\d{3}/);
+      if(!m) return;
+      const b = (S().bookings||[]).find(x=>x.bookingNo===m[0]);
+      if(!b) return;
+      const label = labelText(b);
+      if(!label) return;
+      // 예약번호가 들어있는 셀 찾기
+      let cell = null;
+      for(const td of tr.querySelectorAll('td')){ if(td.textContent.includes(m[0])){ cell = td; break; } }
+      if(!cell) return;
+      const badge = document.createElement('div');
+      badge.className = 'fhk-v240-badge';
+      badge.style.cssText = 'margin-top:3px;font-size:11px;color:#fbbf24;font-weight:600;';
+      badge.textContent = label + (b.internal ? ' · 매출제외' : '');
+      cell.appendChild(badge);
+    });
+  }
+  // 견적 선택 드롭다운 옵션에도 촬영명 반영
+  function decorateQuoteOptions(){
+    const sel = $('quoteBooking'); if(!sel) return;
+    [...sel.options].forEach(opt=>{
+      if(!opt.value) return;
+      const b = findBooking(opt.value);
+      if(!b) return;
+      const label = labelText(b);
+      if(label && !opt.textContent.includes(label)){
+        opt.textContent = opt.textContent + ' · ' + label;
+      }
+    });
+  }
+
+  /* ---------- 옵저버 + 렌더 후킹 ---------- */
+  function afterBookingsRender(){ setTimeout(decorateBookingRows, 0); }
+  function afterQuotesRender(){ setTimeout(()=>{ decorateQuoteOptions(); fixQuoteGrossAmounts(); }, 0); }
+
+  (function wrapRenders(){
+    ['renderBookings'].forEach(name=>{
+      const prev = window[name];
+      if(typeof prev==='function' && !prev.__fhkV240Wrapped){
+        const w = function(){ const r=prev.apply(this,arguments); afterBookingsRender(); return r; };
+        w.__fhkV240Wrapped = true; window[name]=w; try{ eval(name+'=window[name]'); }catch(_){}
+      }
+    });
+    ['renderQuotes','renderQuote'].forEach(name=>{
+      const prev = window[name];
+      if(typeof prev==='function' && !prev.__fhkV240Wrapped){
+        const w = function(){ const r=prev.apply(this,arguments); afterQuotesRender(); return r; };
+        w.__fhkV240Wrapped = true; window[name]=w; try{ eval(name+'=window[name]'); }catch(_){}
+      }
+    });
+  })();
+
+  // 목록 영역 관찰 (다른 패치가 다시 그려도 배지 유지)
+  (function observe(){
+    const bt = $('bookingsTable');
+    if(bt && 'MutationObserver' in window){
+      try{ new MutationObserver(()=>{ if(!window.__fhkV240Decorating){ window.__fhkV240Decorating=true; decorateBookingRows(); window.__fhkV240Decorating=false; } }).observe(bt,{childList:true,subtree:true}); }catch(_){}
+    }
+  })();
+
+  // 탭 진입/부팅 보정
+  const _osp = window.showPanel;
+  if(typeof _osp==='function'){
+    window.showPanel = function(id){
+      const r=_osp.apply(this,arguments);
+      if(id==='bookings'){ [60,300].forEach(t=>setTimeout(decorateBookingRows,t)); }
+      if(id==='quotes'){ [60,300].forEach(t=>setTimeout(()=>{decorateQuoteOptions();fixQuoteGrossAmounts();},t)); }
+      if(id==='dashboard'){ try{ if(typeof renderDashboard==='function') renderDashboard(); }catch(_){} }
+      return r;
+    };
+    try{ showPanel=window.showPanel; }catch(_){}
+  }
+  [1000,2000].forEach(t=>setTimeout(decorateBookingRows,t));
 })();
 </script>
 
