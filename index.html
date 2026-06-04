@@ -19455,7 +19455,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v246';
+  const DISPLAY_VERSION = 'v247';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -20161,7 +20161,34 @@ else{bump();injectGroupCard();}
     try{ saveBooking = wrapped; }catch(_){}
   })();
 
-  /* ---------- (3) 예약 목록·견적 선택에 촬영명/자체촬영 배지 표시 ---------- */
+  /* ---------- 모달 열림 감지: 어떤 경로(신규/수정)로 열려도 필드 보장 + 값 복원 ----------
+     openBookingModal 래퍼가 다른 패치에 덮여도 동작하도록, bookingModal 의 표시를
+     직접 관찰해 필드를 주입하고 현재 편집 중인 예약(bkId)의 값을 채운다. */
+  (function watchBookingModal(){
+    const modal = document.getElementById('bookingModal');
+    if(!modal || !('MutationObserver' in window)) return;
+    const isOpen = () => modal.classList.contains('active') || getComputedStyle(modal).display !== 'none';
+    function hydrateFromCurrent(){
+      ensureModalFields();
+      const id = ($('bkId')||{}).value || '';
+      const b = id ? findBooking(id) : null;
+      const pn = $('bkProjectName'); const ic = $('bkInternal');
+      // 신규(빈 id)면 빈 값, 수정이면 해당 예약 값
+      if(pn && document.activeElement !== pn) pn.value = b && b.projectName ? b.projectName : '';
+      if(ic) ic.checked = !!(b && b.internal);
+    }
+    let wasOpen = isOpen();
+    new MutationObserver(()=>{
+      const open = isOpen();
+      if(open && !wasOpen){
+        // 막 열렸다 → 필드 보장 + 복원 (모달 본문 렌더 직후까지 몇 번 보정)
+        [0, 60, 160, 320].forEach(t=>setTimeout(hydrateFromCurrent, t));
+      }
+      wasOpen = open;
+    }).observe(modal, {attributes:true, attributeFilter:['class','style']});
+    // 페이지 로드 시 이미 열려 있을 수도
+    if(isOpen()) [0,120].forEach(t=>setTimeout(hydrateFromCurrent,t));
+  })();
   function labelText(b){
     const parts = [];
     if(b.internal) parts.push('자체촬영');
