@@ -19401,7 +19401,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v244';
+  const DISPLAY_VERSION = 'v245';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -20505,7 +20505,14 @@ else{bump();injectGroupCard();}
       '.fhk-v243-stage{position:relative;width:100%;overflow:hidden;touch-action:none;-webkit-overflow-scrolling:touch;}'+
       '.fhk-v243-stage .quote-doc{transform-origin:0 0;will-change:transform;}'+
       '.fhk-v243-hint{font-size:12px;color:#9ca3af;text-align:center;margin:6px 0 10px;}'+
+      // 모바일에서 계약서가 새로 그려질 때 "큰 상태"가 잠깐 보이지 않도록 CSS 로 미리 축소해 둔다.
+      // (JS 가 정밀 맞춤을 적용하기 전의 기본값. --fhk-fit 변수로 JS 가 정확한 배율을 덮어쓴다)
+      '@media (max-width:820px){'+
+      '  #quoteContent .quote-doc{transform-origin:0 0;transform:scale(var(--fhk-fit,0.42));}'+
+      '  #quoteContent .fhk-v243-stage .quote-doc{transform:none;}'+  /* stage 안에서는 JS inline transform 사용 */
+      '}'+
       '@media print{.fhk-v243-stage{overflow:visible!important;height:auto!important;}'+
+      '#quoteContent .quote-doc{transform:none!important;}'+
       '.fhk-v243-stage .quote-doc{transform:none!important;}}';
     document.head.appendChild(st);
   })();
@@ -20554,6 +20561,8 @@ else{bump();injectGroupCard();}
     state.scale = state.fit;
     state.tx = 0; state.ty = 0;
     apply(stage, doc);
+    // 다음 재렌더 때 CSS 기본 축소가 정확한 배율을 쓰도록 변수 갱신 (큰 상태 깜빡임 방지)
+    try{ document.documentElement.style.setProperty('--fhk-fit', String(state.fit)); }catch(_){}
   }
 
   function clamp(stage, doc){
@@ -20639,25 +20648,36 @@ else{bump();injectGroupCard();}
     ['renderQuote'].forEach(name=>{
       const prev = window[name];
       if(typeof prev==='function' && !prev.__fhkV243Wrapped){
-        const w=function(){ const r=prev.apply(this,arguments); refresh(); return r; };
+        const w=function(){ const r=prev.apply(this,arguments); setupNow(); return r; };
         w.__fhkV243Wrapped=true; window[name]=w; try{ eval(name+'=window[name]'); }catch(_){}
       }
     });
   })();
   const _osp=window.showPanel;
   if(typeof _osp==='function'){
-    window.showPanel=function(id){ const r=_osp.apply(this,arguments); if(id==='quotes') refresh(); return r; };
+    window.showPanel=function(id){ const r=_osp.apply(this,arguments); if(id==='quotes') setupNow(); return r; };
     try{ showPanel=window.showPanel; }catch(_){}
   }
   window.addEventListener('resize', ()=>{ if(isMobile()) refresh(); });
-  // quoteContent 변경 관찰
+  // quoteContent 변경 관찰: 새 계약서가 stage 없이 들어오면 "즉시(동기)" 축소 적용 → 큰 상태 깜빡임 차단
   (function observe(){
     const qc=document.getElementById('quoteContent');
     if(qc && 'MutationObserver' in window){
-      try{ new MutationObserver(()=>{ if(isMobile() && !document.querySelector('#quoteContent .fhk-v243-stage .quote-doc')) refresh(); }).observe(qc,{childList:true,subtree:true}); }catch(_){}
+      try{
+        new MutationObserver(()=>{
+          if(!isMobile()) return;
+          const doc=document.querySelector('#quoteContent .quote-doc');
+          if(doc && !doc.closest('.fhk-v243-stage')){
+            // 디바운스 없이 즉시(페인트 전) 적용
+            if(!window.__fhkV243Setup){ window.__fhkV243Setup=true; try{ setup(); }finally{ window.__fhkV243Setup=false; } }
+          }
+        }).observe(qc,{childList:true,subtree:true});
+      }catch(_){}
     }
   })();
-  refresh();
+  // 즉시 적용 헬퍼 (중복 진입 방지)
+  function setupNow(){ if(window.__fhkV243Setup) return; window.__fhkV243Setup=true; try{ setup(); }finally{ window.__fhkV243Setup=false; } setTimeout(setup, 120); }
+  setupNow();
 })();
 </script>
 
