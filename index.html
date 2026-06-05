@@ -11182,26 +11182,40 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   }
   function restoreAllBasicsFromBooking(b){
     if(!b)return;
-    const main=[...(b.equipmentIds||[])].filter(id=>eqById(id));
+    // 저장된 예약 장비 + 현재 화면에서 선택된 장비(수정 중 새로 추가한 것 포함)를 모두 대상으로
+    const savedMain=[...(b.equipmentIds||[])].filter(id=>eqById(id));
+    let liveSel=[]; try{ liveSel=selected().filter(id=>eqById(id)); }catch(_){}
+    const main=[...new Set([...savedMain, ...liveSel])];
     setSelected(main);
+    const cur=clone(window.__fhkBasicCompSelections||{});
     const restored={};
     main.forEach(id=>{
       if(!isSingleEq(id))return;
+      // 1) 예약에 저장된 선택
       const map=collectSavedForOwner(b,id);
-      if(Object.keys(map).length)restored[id]=map;
+      if(Object.keys(map).length){ restored[id]=map; return; }
+      // 2) 저장된 게 없으면(새로 추가했거나 아직 미저장) 현재 임시 선택을 보존
+      if(cur[id]) restored[id]=cleanSlotMap(cur[id], norm(eqById(id)?.name));
     });
-    // 기존 임시 선택과 병합하되, 현재 예약 메인에 없는 owner는 제거
-    const cur=clone(window.__fhkBasicCompSelections||{});
-    main.forEach(id=>{ if(cur[id]&&!restored[id]) restored[id]=cleanSlotMap(cur[id], norm(eqById(id)?.name)); });
     window.__fhkBasicCompSelections=restored;
   }
   function ensureOwnerVisible(ownerId){
     const b=currentBooking(); if(!b)return;
+    // 이 장비가 아직 예약에 저장되지 않은(수정 중 새로 추가한) 장비라면,
+    // restoreAllBasicsFromBooking 으로 임시 선택이 초기화되지 않도록 보존만 한다.
+    const savedIds=new Set((b.equipmentIds||[]));
+    const curSel=clone(window.__fhkBasicCompSelections||{});
     restoreAllBasicsFromBooking(b);
+    // 복원 후, 새로 추가한 장비(b에 없던 owner)의 임시 선택을 되살린다.
+    window.__fhkBasicCompSelections=window.__fhkBasicCompSelections||{};
+    Object.keys(curSel).forEach(id=>{
+      if(!savedIds.has(id) && curSel[id] && Object.keys(curSel[id]).length){
+        window.__fhkBasicCompSelections[id]=curSel[id];
+      }
+    });
     const owner=eqById(ownerId); if(!owner)return;
     const saved=collectSavedForOwner(b,ownerId);
     if(Object.keys(saved).length){
-      window.__fhkBasicCompSelections=window.__fhkBasicCompSelections||{};
       window.__fhkBasicCompSelections[ownerId]=saved;
     }
   }
@@ -15236,7 +15250,11 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function currentFixedBasicMap(){
     const b=getBooking();
-    const main=b?.equipmentIds?.length ? b.equipmentIds : selectedMainIds();
+    // 수정 모드에서 새로 추가한 장비(화면 선택)도 포함해야 그 선택이 보존된다.
+    // 기존: b.equipmentIds 만 → 새 장비가 repairOwnerMap 에서 제거됨.
+    const live=selectedMainIds()||[];
+    const saved=(b&&b.equipmentIds)||[];
+    const main=[...new Set([...saved, ...live])];
     const fixed=repairOwnerMap(getBasicMapFromContext(), main);
     window.__fhkBasicCompSelections=clone(fixed);
     if(b){
@@ -19455,7 +19473,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v247';
+  const DISPLAY_VERSION = 'v248';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
