@@ -496,6 +496,468 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   window.addAccessoryDraft=function(){if(!window.__settingsDraft)setSettingsDraft();const v=val('newAccessoryName').trim();if(!v)return alert('구성품명을 입력하세요');window.__settingsDraft.accessoryItems.push(v);renderSettings()};
   window.removeAccessoryDraft=function(i){if(!window.__settingsDraft)setSettingsDraft();window.__settingsDraft.accessoryItems.splice(i,1);renderSettings()};
   window.discardSettingsDraft=function(){setSettingsDraft();renderSettings()};
+  window.saveSettings=function(){if(!window.__settingsDraft)setSettingsDraft();const d=window.__settingsDraft;d.studentPct=Number(val('studentPct'))||0;d.kongjuPct=Number(val('kongjuPct'))||0;d.vatPct=Number(val('vatPct'))||0;document.querySelectorAll('[data-discount-idx]').forEach(input=>{const i=Number(input.dataset.discountIdx); if(d.discountRules[i])d.discountRules[i].pct=Number(input.value)||0});document.querySelectorAll('[data-accessory-idx]').forEach(  }
+  .fhk-v185-title{
+    font-weight:900;
+    color:#f3f4f6;
+    font-size:14px;
+  }
+  .fhk-v185-current{
+    color:#9ca3af;
+    font-size:12px;
+    margin-left:8px;
+    font-weight:700;
+  }
+  .fhk-v185-actions{
+    display:flex;
+    gap:6px;
+    align-items:center;
+  }
+  .fhk-v185-round{
+    width:28px;
+    height:28px;
+    border-radius:999px;
+    border:1px solid #30343f;
+    background:#1a1d24;
+    color:#e5e7eb;
+    cursor:pointer;
+    font-weight:900;
+    line-height:1;
+  }
+  .fhk-v185-round:hover{
+    border-color:#777;
+    color:#fff;
+  }
+  .fhk-v185-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .fhk-v185-row:last-child{
+    margin-bottom:0;
+  }
+  .fhk-v185-label{
+    min-width:46px;
+    color:#9ca3af;
+    font-size:12px;
+    font-weight:900;
+    letter-spacing:-.02em;
+  }
+  .fhk-v185-btn{
+    background:#1a1d24;
+    border:1px solid #2a2d35;
+    color:#9ca3af;
+    border-radius:999px;
+    padding:8px 12px;
+    cursor:pointer;
+    font-weight:800;
+    font-size:12px;
+    line-height:1;
+    transition:none!important;
+  }
+  .fhk-v185-btn:hover{
+    color:#fff;
+    border-color:#6b7280;
+  }
+  .fhk-v185-btn.active{
+    background:#fff;
+    color:#000;
+    border-color:#fff;
+  }
+  .fhk-v185-count{
+    opacity:.65;
+    font-size:11px;
+    margin-left:4px;
+  }
+</style>
+
+
+<style id="fhk-v186-card-chips-menu-style">
+  /* v186: v185 상단카테고리 유지 + v125식 카드 요소 복구 */
+  #equipmentContent .model-card{
+    position:relative;
+  }
+  .fhk-v186-titleline{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding-right:44px;
+    margin-bottom:4px;
+  }
+  .fhk-v186-type-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    flex:0 0 auto;
+    border-radius:999px;
+    padding:4px 8px;
+    font-size:11px;
+    font-weight:900;
+    line-height:1;
+    border:1px solid transparent;
+    letter-spacing:-.02em;
+  }
+  .fhk-v186-type-chip.single{
+    background:rgba(59,130,246,.16);
+    color:#93c5fd;
+    border-color:rgba(96,165,250,.32);
+  }
+  .fhk-v186-type-chip.set{
+    background:linear-gradient(135deg,rgba(245,158,11,.22),rgba(250,204,21,.16));
+    color:#fde68a;
+    border-color:rgba(245,158,11,.38);
+  }
+  .fhk-v186-card-menu-btn{
+    position:absolute;
+    right:10px;
+    top:10px;
+    width:34px;
+    height:34px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:10px;
+    background:#2a2d35;
+    color:#d1d5db;
+    font-size:20px;
+    line-height:1;
+    cursor:pointer;
+    z-index:5;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);
+  }
+  .fhk-v186-card-menu-btn:hover{
+    background:#3a3f4c;
+    color:#fff;
+    border-color:rgba(255,255,255,.18);
+  }
+  .fhk-v186-card-menu{
+    position:fixed;
+    z-index:99999;
+    min-width:166px;
+    background:#181b22;
+    border:1px solid #343946;
+    border-radius:12px;
+    box-shadow:0 18px 50px rgba(0,0,0,.55);
+    padding:7px;
+    display:none;
+  }
+  .fhk-v186-card-menu.active{
+    display:block;
+  }
+  .fhk-v186-card-menu button{
+    display:block;
+    width:100%;
+    text-align:left;
+    border:0;
+    background:transparent;
+    color:#e5e7eb;
+    border-radius:8px;
+    padding:10px 12px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .fhk-v186-card-menu button:hover{
+    background:#2a2d35;
+  }
+  .fhk-v186-card-menu .meta-line{
+    padding:6px 10px 8px;
+    color:#9ca3af;
+    font-size:11px;
+    border-bottom:1px solid #2a2d35;
+    margin-bottom:4px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    max-width:240px;
+  }
+</style>
+
+
+<style id="fhk-v192-integrated-category-style">
+  #equipment.fhk-v192-mode #eqCategoryButtons,
+  #equipment.fhk-v192-mode #fhkV80ParentBar,
+  #equipment.fhk-v192-mode #fhkV80SubBar{display:none!important;}
+  #fhkV192TopBar{display:block;margin:12px 0 14px;padding:12px;border:1px solid #252832;border-radius:16px;background:#111318;}
+  .fhk-v192-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
+  .fhk-v192-title{font-weight:900;color:#f3f4f6;font-size:14px}.fhk-v192-current{color:#9ca3af;font-size:12px;margin-left:8px;font-weight:700}
+  .fhk-v192-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.fhk-v192-label{min-width:46px;color:#9ca3af;font-size:12px;font-weight:900;letter-spacing:-.02em}
+  .fhk-v192-btn{background:#1a1d24;border:1px solid #2a2d35;color:#9ca3af;border-radius:999px;padding:8px 12px;cursor:pointer;font-weight:800;font-size:12px;line-height:1;transition:none!important;}
+  .fhk-v192-btn:hover{color:#fff;border-color:#6b7280}.fhk-v192-btn.active{background:#fff;color:#000;border-color:#fff}.fhk-v192-count{opacity:.65;font-size:11px;margin-left:4px;}
+  .fhk-v192-manage{border:1px solid #30343f;background:#252934;color:#e5e7eb;border-radius:999px;padding:8px 10px;font-size:12px;line-height:1;font-weight:900;cursor:pointer;}
+  .fhk-v192-manage:hover{border-color:#777;color:#fff}.fhk-v192-manage.active{background:#f9fafb;color:#111827;border-color:#f9fafb}
+  .fhk-v192-del{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;border-radius:999px;border:1px solid rgba(239,68,68,.6);background:rgba(239,68,68,.16);color:#fecaca;font-size:13px;font-weight:900;vertical-align:middle;}
+  .fhk-v192-del:hover{background:rgba(239,68,68,.36);color:#fff}.fhk-v192-hint{font-size:11px;color:#fca5a5;font-weight:800;margin-left:4px}
+  #equipmentContent .fhk-v192-add-card{position:relative!important;min-height:142px!important;border-radius:18px!important;border:1px solid rgba(255,255,255,.10)!important;background:radial-gradient(circle at 18% 18%,rgba(96,165,250,.22),transparent 34%),radial-gradient(circle at 85% 15%,rgba(168,85,247,.18),transparent 32%),linear-gradient(135deg,rgba(31,41,55,.96),rgba(17,24,39,.96))!important;box-shadow:0 14px 34px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;cursor:pointer!important;overflow:hidden!important;transition:none!important;}
+  #equipmentContent .fhk-v192-add-card:hover{border-color:rgba(255,255,255,.28)!important;background:radial-gradient(circle at 18% 18%,rgba(96,165,250,.32),transparent 34%),radial-gradient(circle at 85% 15%,rgba(168,85,247,.26),transparent 32%),linear-gradient(135deg,rgba(38,48,64,.98),rgba(22,30,44,.98))!important;}
+  .fhk-v192-plus{width:42px;height:42px;border-radius:14px;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;color:#fff;background:linear-gradient(135deg,rgba(59,130,246,.9),rgba(168,85,247,.75));box-shadow:0 10px 24px rgba(59,130,246,.20)}
+  .fhk-v192-add-label{font-size:14px;color:#f3f4f6;font-weight:900;letter-spacing:-.02em}.fhk-v192-add-sub{font-size:11px;color:#9ca3af;margin-top:5px}
+</style>
+
+</head>
+<body>
+<div id="loginGate" class="login"><div class="login-box"><div class="logo" style="margin:0 auto 14px;width:58px;height:58px;font-size:22px">HK</div><h2>FILM HK RENTAL</h2><p class="meta" style="margin:8px 0 18px">관리자 로그인</p><input id="loginPw" type="password" placeholder="비밀번호" style="width:100%;margin-bottom:9px" onkeydown="if(event.key==='Enter')tryLogin()"><div id="loginErr" style="height:18px;color:#f87171;font-size:12px"></div><button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="tryLogin()">접속</button><p class="meta" style="margin-top:15px">초기 비밀번호: <b style="color:#fbbf24">filmhk2026</b></p></div></div>
+<header><div class="brand"><div class="logo">HK</div><div><h1>FILM HK RENTAL · 관리자 v236</h1><div class="meta">필름에이치케이 | 사업자 415-32-00727 | 0507-1355-4807</div></div></div><div class="top-actions no-print"><span class="meta" id="todayText"></span><button class="btn btn-secondary btn-sm" onclick="changePw()">비밀번호 변경</button><button class="btn btn-secondary btn-sm" onclick="exportData()">백업</button><button class="btn btn-secondary btn-sm" onclick="document.getElementById('importFile').click()">복원</button><input id="importFile" type="file" accept=".json" style="display:none" onchange="importData(event)"><button class="btn btn-secondary btn-sm" onclick="logout()">로그아웃</button></div></header>
+<nav><button class="tab-btn active" data-panel="dashboard">📊 대시보드</button><button class="tab-btn" data-panel="equipment">📷 장비 관리</button><button class="tab-btn" data-panel="bookings">📋 예약/대여</button><button class="tab-btn" data-panel="calendar">📅 일정 캘린더</button><button class="tab-btn" data-panel="customers">👥 고객/거래처</button><button class="tab-btn" data-panel="quotes">📄 견적서</button><button class="tab-btn" data-panel="settings">⚙️ 할인/설정</button></nav>
+<div class="ai-bar no-print"><span>✨</span><input id="aiInput" placeholder="예: FX3 김영조 2월 4일~5일 10시~22시 예약 / 오늘 반납건 보여줘"><button class="btn btn-primary" onclick="runSimpleAI()">실행</button></div>
+<main>
+<section id="dashboard" class="panel active"><div class="panel-header"><h2>대시보드 <small>운영 현황</small></h2><button class="btn btn-primary" onclick="openBookingModal()">+ 예약 등록</button></div><div class="stats" id="dashStats"></div><div class="grid3"><div class="card"><h3>진행 중인 대여</h3><div id="activeRentals"></div></div><div class="card"><h3>예정 대여</h3><div id="upcomingRentals"></div></div><div class="card"><h3>오늘/연체 반납</h3><div id="dueRentals"></div></div></div></section>
+<section id="equipment" class="panel"><div class="panel-header"><h2>장비 관리 <small>카테고리 → 모델 묶음 → 개별 장비</small></h2><button class="btn btn-primary" onclick="openEquipmentModal()">+ 장비 등록</button></div><div class="toolbar"><input id="eqSearch" placeholder="장비명/시리얼 검색" oninput="renderEquipment()" style="width:240px"><button class="btn btn-secondary" onclick="openAvailabilityModal()">날짜별 재고 확인</button></div><div class="category-buttons" id="eqCategoryButtons"></div><div id="equipmentContent"></div></section>
+<section id="bookings" class="panel"><div class="panel-header"><h2>예약/대여 관리</h2><button class="btn btn-primary" onclick="openBookingModal()">+ 예약 등록</button></div><div class="toolbar"><input id="bkSearch" placeholder="고객/장비 검색" oninput="renderBookings()"><select id="bkStatusFilter" onchange="renderBookings()"><option value="">전체 상태</option><option value="reserved">예약</option><option value="active">대여중</option><option value="returned">반납완료</option><option value="overdue">연체</option><option value="cancelled">취소</option></select></div><div id="bookingsTable"></div></section>
+<section id="calendar" class="panel"><div class="panel-header"><h2>일정 캘린더 <small>빈 날짜 클릭 시 예약 등록</small></h2></div><div class="calendar"><div class="cal-head"><button class="btn btn-secondary btn-sm" onclick="moveMonth(-1)">◀ 이전</button><h3 id="calTitle"></h3><button class="btn btn-secondary btn-sm" onclick="moveMonth(1)">다음 ▶</button></div><div class="cal-grid" id="calGrid"></div></div></section>
+<section id="customers" class="panel"><div class="panel-header"><h2>고객/거래처 관리</h2><button class="btn btn-primary" onclick="openCustomerModal()">+ 고객 등록</button></div><div class="toolbar"><input id="custSearch" placeholder="이름/전화/회사 검색" oninput="renderCustomers()"><select id="custTypeFilter" onchange="renderCustomers()"><option value="">전체</option><option value="일반">일반</option><option value="학생/독립영화">학생/독립영화</option><option value="법인">법인</option></select></div><div id="customersTable"></div></section>
+<section id="quotes" class="panel"><div class="panel-header"><h2>견적서 / 임대차 계약서</h2></div><div class="toolbar no-print"><select id="quoteBooking" onchange="renderQuote()" style="min-width:360px"><option value="">예약을 선택하세요</option></select><button class="btn btn-secondary" onclick="window.print()">인쇄/PDF</button><button class="btn btn-secondary" onclick="copyQuoteText()">카톡용 복사</button></div><div id="quoteContent"></div></section>
+<section id="settings" class="panel"><div class="panel-header"><h2>할인/설정</h2></div><div class="grid2"><div class="card"><h3>회차 할인표</h3><p class="meta" style="margin-bottom:10px">견적서 파일 기준 할인표를 반영. 홈페이지에서 자유롭게 수정 가능.</p><div id="discountEditor"></div><button class="btn btn-secondary btn-sm" onclick="addDiscountRule()">+ 할인구간 추가</button></div><div class="card"><h3>기본 할인</h3><div class="form-row"><label>학생/독립영화</label><input id="studentPct" type="number" min="0" max="100" onchange="saveSettings()"></div><div class="form-row"><label>공주대 할인</label><input id="kongjuPct" type="number" min="0" max="100" onchange="saveSettings()"></div><div class="form-row"><label>부가세</label><input id="vatPct" type="number" min="0" max="20" onchange="saveSettings()"></div><button class="btn btn-secondary" onclick="resetData()">초기 데이터 복구</button></div></div></section>
+</main>
+<div class="modal-bg" id="customerModal"><div class="modal"><div class="modal-header"><h3 id="customerTitle">고객 등록</h3><button class="close" onclick="closeModal('customerModal')">×</button></div><div class="modal-body"><input type="hidden" id="custId"><div class="form-row"><label>구분</label><select id="custType"><option value="일반">일반</option><option value="학생/독립영화">학생/독립영화</option><option value="법인">법인</option></select></div><div class="form-row"><label>이름/회사명</label><input id="custName"></div><div class="form-row"><label>담당자</label><input id="custContact"></div><div class="form-row"><label>전화번호</label><input id="custPhone"></div><div class="form-row"><label>카카오톡</label><input id="custKakao"></div><div class="form-row"><label>이메일</label><input id="custEmail"></div><div class="form-row"><label>주소/비고</label><textarea id="custNote"></textarea></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('customerModal')">취소</button><button class="btn btn-primary" onclick="saveCustomer()">저장</button></div></div></div>
+<div class="modal-bg" id="equipmentModal"><div class="modal"><div class="modal-header"><h3 id="equipmentTitle">장비 등록</h3><button class="close" onclick="closeModal('equipmentModal')">×</button></div><div class="modal-body"><input type="hidden" id="eqId"><div class="form-row"><label>카테고리</label><select id="eqCategory"></select></div><div class="form-row"><label>모델명</label><input id="eqName" placeholder="예: Sony FX3"></div><div class="form-row"><label>관리번호</label><input id="eqSerial" placeholder="예: FX3-3"></div><div class="form-row"><label>제조사 시리얼</label><input id="eqManufacturerSerial" placeholder="예: 카메라 본체 S/N"></div><div class="form-row"><label>일 대여료</label><input id="eqRate" type="number" step="1000"></div><div class="form-row"><label>상태</label><select id="eqStatus"><option value="available">사용가능</option><option value="repair">수리중</option><option value="lost">분실</option></select></div><div class="form-row"><label>보관 위치</label><input id="eqLocation" placeholder="예: 카메라 선반 A-1"></div><div class="form-row"><label>비고/구성품</label><textarea id="eqNote"></textarea></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('equipmentModal')">취소</button><button class="btn btn-primary" onclick="saveEquipment()">저장</button></div></div></div>
+<div class="modal-bg" id="bookingModal"><div class="modal large"><div class="modal-header"><h3 id="bookingTitle">예약 등록</h3><button class="close" onclick="closeModal('bookingModal')">×</button></div><div class="modal-body"><input type="hidden" id="bkId"><div class="grid2"><div class="card"><h4>고객/일정</h4><div class="form-row"><label>고객 검색</label><div class="customer-search-box"><input id="bkCustomerSearch" placeholder="고객명 입력" oninput="showCustomerSuggestions()" onfocus="showCustomerSuggestions()"><div class="suggest" id="customerSuggest"></div></div></div><input type="hidden" id="bkCustomerId"><div id="selectedCustomer" class="meta" style="margin:-5px 0 12px 147px">선택된 고객 없음</div><div class="form-row"><label>신규 고객</label><button class="btn btn-secondary" onclick="openCustomerFromBooking()">+ 신규 고객 등록</button></div><div class="split"><div class="form-row" style="grid-template-columns:100px 1fr"><label>시작일</label><input id="bkStartDate" type="date" onchange="onBookingDateChange()"></div><div class="form-row" style="grid-template-columns:100px 1fr"><label>시작시간</label><input id="bkStartTime" type="time" value="10:00" onchange="onBookingDateChange()"></div></div><div class="split"><div class="form-row" style="grid-template-columns:100px 1fr"><label>반납일</label><input id="bkEndDate" type="date" onchange="onBookingDateChange()"></div><div class="form-row" style="grid-template-columns:100px 1fr"><label>반납시간</label><input id="bkEndTime" type="time" value="22:00" onchange="onBookingDateChange()"></div></div><div id="rentalDurationLabel" class="duration-pill">대여 기간을 입력하세요</div><div class="form-row"><label>상태</label><select id="bkStatus"><option value="reserved">예약</option><option value="active">대여중</option><option value="returned">반납완료</option><option value="cancelled">취소</option></select></div><label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input id="bkStudentDiscount" type="checkbox" onchange="updateBookingPreview()"> 학생/독립영화 할인 적용</label><label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input id="bkKongjuDiscount" type="checkbox" onchange="updateBookingPreview()"> 공주대 할인 적용</label><label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input id="bkVat" type="checkbox" onchange="updateBookingPreview()"> VAT 포함</label><div class="form-row"><label>추가 할인(원)</label><input id="bkManualDiscount" type="number" value="0" step="1000" oninput="updateBookingPreview()"></div><div class="form-row"><label>입금상태</label><select id="bkPayment"><option value="unpaid">미입금</option><option value="partial">부분입금</option><option value="paid">입금완료</option></select></div><div class="form-row"><label>메모</label><textarea id="bkNote"></textarea></div></div><div class="card"><h4>선택된 장비</h4><div id="selectedEquipments" style="min-height:76px;margin-bottom:12px"></div><button class="btn btn-primary" onclick="openEquipmentChooser()">+ 장비 추가/제거</button><div class="price-box" id="bookingPreview" style="margin-top:14px">장비를 선택하세요</div></div></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('bookingModal')">취소</button><button class="btn btn-primary" onclick="saveBooking()">예약 저장</button></div></div></div>
+<div class="modal-bg" id="chooserModal"><div class="modal large"><div class="modal-header"><h3>장비 추가/제거</h3><button class="close" onclick="closeModal('chooserModal')">×</button></div><div class="modal-body"><div class="toolbar"><span class="meta">선택 기간: <b id="chooserDateLabel" style="color:#fff"></b></span><input id="chooserSearch" placeholder="모델/시리얼 검색" oninput="renderChooser()" style="margin-left:auto;width:230px"></div><div class="chooser-layout"><div class="chooser-col"><h4>카테고리</h4><div class="chooser-list" id="chooserCats"></div></div><div class="chooser-col"><h4>장비 모델</h4><div class="chooser-list"><div class="model-grid" id="chooserModels"></div></div></div><div class="chooser-col"><h4>개별 장비</h4><div class="chooser-list" id="chooserInstances"></div></div><div class="chooser-col"><h4>선택 목록 / 예상 견적</h4><div class="chooser-list chooser-summary" id="chooserSelectedSummary"></div></div></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('chooserModal')">닫기</button><button class="btn btn-primary" onclick="applyChooser()">선택 반영</button></div></div></div>
+<div class="modal-bg" id="basicCompModal"><div class="modal large"><div class="modal-header"><h3 id="basicCompTitle">기본구성품 선택</h3><button class="close" onclick="closeModal('basicCompModal')">×</button></div><div class="modal-body"><div class="toolbar"><span class="meta" id="basicCompSubtitle"></span></div><div id="basicCompBody"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('basicCompModal')">닫기</button><button class="btn btn-primary" onclick="applyBasicComp()">구성 반영</button></div></div></div>
+<div class="modal-bg" id="availabilityModal"><div class="modal"><div class="modal-header"><h3>날짜별 장비 가능 여부</h3><button class="close" onclick="closeModal('availabilityModal')">×</button></div><div class="modal-body"><div class="split"><input id="avStart" type="date"><input id="avEnd" type="date"></div><button class="btn btn-primary" style="margin:10px 0" onclick="renderAvailability()">조회</button><div id="availabilityResult"></div></div></div></div>
+<script>
+const STORAGE_KEY='filmhk_rental_v2'; const PW_KEY='filmhk_pw_v1'; const AUTH_KEY='filmhk_auth_v1';
+const defaultCategories=['카메라 단품','카메라 세트','카메라 악세사리','렌즈','조명 기기','조명 악세사리','모니터·송수신기','그립','기타 악세사리','패키지'];
+let currentEqCat='전체', currentChooserCat='', currentChooserModel='', chooserSelection=[]; let calMonth=new Date();
+function uid(p){return p+'_'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3)}
+function today(){return new Date().toISOString().slice(0,10)}
+function fmt(n){return (Number(n)||0).toLocaleString('ko-KR')+'원'}
+function esc(s){return String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+function dt(d,t='00:00'){return new Date(`${d}T${t||'00:00'}:00`)}
+function daysBetween(s,e){const d=Math.ceil((dt(e)-dt(s))/(86400000));return Math.max(1,d+1)}
+function billDays(sD,sT,eD,eT){const ms=dt(eD,eT)-dt(sD,sT);return Math.max(1,Math.ceil(ms/86400000))}
+function rentalDurationText(sD,sT,eD,eT){if(!sD||!eD)return '대여 기간을 입력하세요';const ms=dt(eD,eT)-dt(sD,sT);if(ms<=0)return '반납 시간이 시작 시간보다 뒤여야 합니다';const h=Math.floor(ms/3600000),d=Math.floor(h/24),r=h%24;const mins=Math.floor((ms%3600000)/60000);const raw=[d?d+'일':'',r?r+'시간':'',(!d&&!r&&mins)?mins+'분':''].filter(Boolean).join(' ');return `${raw} 대여 · 청구 ${billDays(sD,sT,eD,eT)}일 기준`}
+function statusText(s){return {available:'사용가능',repair:'수리중',lost:'분실',reserved:'예약',active:'대여중',returned:'반납완료',overdue:'연체',cancelled:'취소',unpaid:'미입금',partial:'부분입금',paid:'입금완료'}[s]||s}
+function badge(s){let cls=s==='available'||s==='returned'||s==='paid'?'ok':s==='active'||s==='reserved'||s==='partial'?'info':s==='overdue'||s==='lost'||s==='unpaid'?'danger':s==='repair'?'warn':'gray';return `<span class="badge ${cls}">${statusText(s)}</span>`}
+function seed(){const eq=[
+['카메라 단품','Sony FX3','FX3-1',50000],['카메라 단품','Sony FX3','FX3-2',50000],['카메라 단품','Sony FX3','FX3-3',50000],['카메라 단품','Sony FX6','FX6-1',90000],['카메라 단품','Sony A7S III','A7S3-1',40000],['카메라 세트','RED KOMODO-X FULL SET','KOMODOX-SET-1',200000],['카메라 세트','Sony FX6 FULL SET','FX6-SET-1',140000],['카메라 세트','Sony FX3 FULL SET','FX3-SET-1',120000],['렌즈','Vespid Prime PL 7SET','VESPID-1',100000],['렌즈','Sony FE 24-70 GM II','2470GM-1',25000],['조명 기기','Aputure STORM 1200X Stand SET','1200X-1',70000],['조명 기기','Aputure STORM 600C II Stand SET','600C-1',60000],['조명 기기','Aputure Infinibar PB12','PB12-1',65000],['조명 기기','Aputure MC Pro 8KIT','MCPRO-1',50000],['조명 기기','Aputure B7C','B7C-1',10000],['조명 기기','Aputure B7C','B7C-2',10000],['모니터·송수신기','SmallHD INDIE7','INDIE7-1',30000],['모니터·송수신기','Accsoon CineView Master 1:2','CVM-1',35000],['그립','DJI Ronin RS4 Pro','RS4PRO-1',50000],['그립','MovMax Grip Dolly','MOVMAX-1',50000],['기타 악세사리','Synco Xtalk X5 인터컴','INTERCOM-1',25000]
+].map(a=>({id:uid('e'),category:a[0],name:a[1],serial:a[2],rate:a[3],status:'available',note:'',location:''}));
+return {equipment:eq,customers:[{id:uid('c'),type:'학생/독립영화',name:'김영조',contact:'',phone:'010-',kakao:'',email:'',note:'샘플 고객'},{id:uid('c'),type:'일반',name:'이승민',contact:'',phone:'010-',kakao:'',email:'',note:''}],bookings:[],settings:{studentPct:20,kongjuPct:15,vatPct:10,discountRules:[{days:2,pct:5},{days:3,pct:10},{days:4,pct:20},{days:5,pct:25},{days:6,pct:30},{days:7,pct:35},{days:8,pct:36},{days:9,pct:37},{days:10,pct:38},{days:11,pct:39},{days:12,pct:40},{days:13,pct:41},{days:14,pct:42},{days:15,pct:42},{days:16,pct:43},{days:17,pct:43},{days:18,pct:44},{days:19,pct:44},{days:20,pct:44},{days:21,pct:45}]},categories:defaultCategories}}
+let state=load(); function load(){try{const raw=localStorage.getItem(STORAGE_KEY); if(raw){let s=JSON.parse(raw); return migrate(s)}}catch(e){} return seed()} function migrate(s){s.equipment=s.equipment||[];s.customers=s.customers||[];s.bookings=s.bookings||[];s.categories=s.categories||defaultCategories;s.settings=s.settings||{};s.settings.studentPct=Number(s.settings.studentPct??s.settings.discountStudent??20);s.settings.kongjuPct=Number(s.settings.kongjuPct??15);s.settings.vatPct=Number(s.settings.vatPct??10);s.settings.discountRules=s.settings.discountRules||seed().settings.discountRules;s.equipment.forEach(e=>{e.id=e.id||uid('e');e.status=e.status||'available';e.category=e.category||'기타 악세사리';e.rate=Number(e.rate)||0;e.serial=e.serial||''});s.customers.forEach(c=>{c.id=c.id||uid('c');c.type=(c.type==='독립영화')?'학생/독립영화':(c.type||'일반')});s.bookings.forEach(b=>{b.equipmentIds=b.equipmentIds||[];b.startTime=b.startTime||'10:00';b.endTime=b.endTime||'22:00';b.payment=b.payment||b.paymentStatus||'unpaid';b.discount=Number(b.discount)||0});return s} function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+function eq(id){return state.equipment.find(e=>e.id===id)} function cust(id){return state.customers.find(c=>c.id===id)} function customerName(id){return cust(id)?.name||'미지정'} function equipmentName(id){const e=eq(id);return e?`${e.name}${e.serial?' ('+e.serial+')':''}`:'삭제된 장비'} function modelKey(e){return (e.name||'').trim()} function effectiveBookingStatus(b){if(b.status==='active'&&dt(b.endDate,b.endTime)<new Date())return 'overdue';return b.status}
+function rangesOverlap(aS,aE,bS,bE){return aS<bE&&bS<aE} function conflictBookings(eid,startDate,endDate,startTime,endTime,ignoreId){if(!startDate||!endDate)return[];const s=dt(startDate,startTime),e=dt(endDate,endTime);return state.bookings.filter(b=>b.id!==ignoreId&&!['returned','cancelled'].includes(b.status)&&(b.equipmentIds||[]).includes(eid)&&rangesOverlap(s,e,dt(b.startDate,b.startTime),dt(b.endDate,b.endTime)))}
+function isAvailable(e,startDate,endDate,startTime,endTime,ignoreId){return e.status==='available'&&conflictBookings(e.id,startDate,endDate,startTime,endTime,ignoreId).length===0} function upcoming(eid){return state.bookings.filter(b=>!['returned','cancelled'].includes(b.status)&&(b.equipmentIds||[]).includes(eid)).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime))}
+function getDiscount(days){const rules=[...state.settings.discountRules].sort((a,b)=>a.days-b.days);let pct=0;for(const r of rules){if(days>=Number(r.days))pct=Number(r.pct)||0}return pct}
+function priceBreakdown(b){const days=billDays(b.startDate,b.startTime,b.endDate,b.endTime);const base=(b.equipmentIds||[]).reduce((s,id)=>s+(eq(id)?.rate||0)*days,0);const contPct=getDiscount(days), cont=Math.floor(base*contPct/100);let after=base-cont;const studentPct=b.studentDiscount?Number(state.settings.studentPct)||0:0;const student=Math.floor(after*studentPct/100);after-=student;const kongjuPct=b.kongjuDiscount?Number(state.settings.kongjuPct)||0:0;const kongju=Math.floor(after*kongjuPct/100);after-=kongju;const manual=Number(b.discount)||0;after=Math.max(0,after-manual);const vat=b.vat?Math.floor(after*(Number(state.settings.vatPct)||0)/100):0;return{days,base,contPct,cont,studentPct,student,kongjuPct,kongju,manual,vat,total:after+vat}}
+function tryLogin(){if(!localStorage.getItem(PW_KEY))localStorage.setItem(PW_KEY,'filmhk2026');const v=document.getElementById('loginPw').value;if(v===localStorage.getItem(PW_KEY)){sessionStorage.setItem(AUTH_KEY,'1');document.getElementById('loginGate').style.display='none'}else document.getElementById('loginErr').textContent='비밀번호가 일치하지 않습니다'} function logout(){sessionStorage.removeItem(AUTH_KEY);location.reload()} function changePw(){const o=prompt('현재 비밀번호');if(o!==localStorage.getItem(PW_KEY))return alert('현재 비밀번호가 다릅니다');const n=prompt('새 비밀번호');if(!n||n.length<4)return alert('4자 이상 입력');localStorage.setItem(PW_KEY,n);alert('변경되었습니다')}
+function showPanel(id){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.panel===id));renderAll(id)} function renderAll(id){({dashboard:renderDashboard,equipment:renderEquipment,bookings:renderBookings,calendar:renderCalendar,customers:renderCustomers,quotes:renderQuotes,settings:renderSettings}[id]||(()=>{}))()}
+function renderDashboard(){const total=state.equipment.length;const rented=state.equipment.filter(e=>upcoming(e.id).some(b=>effectiveBookingStatus(b)==='active'||effectiveBookingStatus(b)==='overdue')).length;const repair=state.equipment.filter(e=>e.status!=='available').length;const active=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b))).length;const scheduled=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=new Date()).length;const overdue=state.bookings.filter(b=>effectiveBookingStatus(b)==='overdue').length;const unpaid=state.bookings.filter(b=>b.payment!=='paid'&&b.status!=='cancelled').reduce((s,b)=>s+priceBreakdown(b).total,0);document.getElementById('dashStats').innerHTML=`<div class="stat"><div class="label">전체 장비</div><div class="value">${total}</div><div class="sub">대여중 ${rented} · 수리/분실 ${repair}</div></div><div class="stat"><div class="label">진행 중</div><div class="value">${active}</div><div class="sub">대여/연체</div></div><div class="stat"><div class="label">예정 대여</div><div class="value">${scheduled}</div><div class="sub">앞으로 출고</div></div><div class="stat"><div class="label">예약 총액</div><div class="value" style="font-size:18px">${fmt(state.bookings.reduce((s,b)=>s+priceBreakdown(b).total,0))}</div><div class="sub">전체 예약 기준</div></div><div class="stat"><div class="label">미수 예상</div><div class="value" style="font-size:18px;color:#fbbf24">${fmt(unpaid)}</div><div class="sub">미입금/부분입금</div></div>`;const act=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b)));document.getElementById('activeRentals').innerHTML=simpleBookingTable(act);const upcomingList=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=new Date()).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime)).slice(0,10);document.getElementById('upcomingRentals').innerHTML=simpleBookingTable(upcomingList);const due=state.bookings.filter(b=>effectiveBookingStatus(b)==='overdue'||(b.status==='active'&&Math.abs((dt(b.endDate)-dt(today()))/86400000)<=1));document.getElementById('dueRentals').innerHTML=simpleBookingTable(due)}
+function simpleBookingTable(list){return list.length?`<div class="data-wrap"><table><thead><tr><th>고객</th><th>일정</th><th>상태</th></tr></thead><tbody>${list.map(b=>`<tr><td>${esc(customerName(b.customerId))}</td><td>${b.startDate} ${b.startTime} ~ ${b.endDate} ${b.endTime}</td><td>${badge(effectiveBookingStatus(b))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">표시할 예약이 없습니다</div>'}
+function renderCategoryButtons(targetId,current,onClickName,includeAll=true){const cats=[...(includeAll?['전체']:[]),...state.categories];document.getElementById(targetId).innerHTML=cats.map(c=>`<button class="${current===c?'active':''}" onclick="${onClickName}('${esc(c)}')">${esc(c)}</button>`).join('')}
+window.setEqCategory=c=>{currentEqCat=c;renderEquipment()};function renderEquipment(){renderCategoryButtons('eqCategoryButtons',currentEqCat,'setEqCategory');const q=(document.getElementById('eqSearch')?.value||'').toLowerCase();let items=state.equipment.filter(e=>(currentEqCat==='전체'||e.category===currentEqCat)&&(!q||(e.name+e.serial+e.note).toLowerCase().includes(q)));const groups={};items.forEach(e=>(groups[modelKey(e)]=groups[modelKey(e)]||[]).push(e));document.getElementById('equipmentContent').innerHTML=Object.keys(groups).length?`<div class="model-grid">${Object.entries(groups).map(([m,list])=>{const avail=list.filter(e=>e.status==='available').length;const future=list.flatMap(e=>upcoming(e.id).map(b=>`${e.serial||e.name}: ${b.startDate}~${b.endDate} ${customerName(b.customerId)}`)).slice(0,2);return `<div class="model-card" onclick="showModelInstances('${esc(m)}')"><div class="model-title">${esc(m)}</div><div class="model-meta">${esc(list[0].category)} · 총 ${list.length}대 · 기본 가능 ${avail}대<br>${fmt(list[0].rate)}/일</div>${future.length?`<div class="future-line">예정: ${esc(future.join(' / '))}</div>`:'<div class="future-line" style="color:#6b7280">예정 예약 없음</div>'}<div class="meta" style="margin-top:8px">칸을 클릭하면 개별 장비가 열립니다</div></div>`}).join('')}</div>`:'<div class="empty">장비가 없습니다</div>'}
+function showModelInstances(m){const list=state.equipment.filter(e=>modelKey(e)===m);document.getElementById('equipmentContent').innerHTML=`<div class="toolbar"><button class="btn btn-secondary" onclick="renderEquipment()">← 모델 목록</button><button class="btn btn-primary" onclick="openEquipmentModal('', '${esc(m)}')">+ 같은 모델 추가</button></div><div class="data-wrap"><table><thead><tr><th>관리번호</th><th>카테고리</th><th>상태</th><th>대여료</th><th>예정 예약</th><th>관리</th></tr></thead><tbody>${list.map(e=>`<tr><td><b>${esc(e.serial||'-')}</b><br><span class="meta">${esc(e.location||'')}</span></td><td>${esc(e.category)}</td><td>${badge(e.status)}</td><td class="num">${fmt(e.rate)}</td><td>${upcoming(e.id).map(b=>`<div class="meta">${b.startDate}~${b.endDate} ${customerName(b.customerId)} ${badge(effectiveBookingStatus(b))}</div>`).join('')||'<span class="meta">없음</span>'}</td><td><button class="btn btn-secondary btn-sm" onclick="openEquipmentModal('${e.id}')">수정</button> <button class="btn btn-danger btn-sm" onclick="deleteEquipment('${e.id}')">삭제</button></td></tr>`).join('')}</tbody></table></div>`}
+function openEquipmentModal(id='',sameModel=''){fillCategorySelect('eqCategory');document.getElementById('eqId').value=id;document.getElementById('equipmentTitle').textContent=id?'장비 수정':'장비 등록';const e=id?eq(id):null;document.getElementById('eqCategory').value=e?.category||currentEqCat!=='전체'&&currentEqCat||state.categories[0];document.getElementById('eqName').value=e?.name||sameModel||'';document.getElementById('eqSerial').value=e?.serial||'';document.getElementById('eqRate').value=e?.rate||'';document.getElementById('eqStatus').value=e?.status||'available';document.getElementById('eqLocation').value=e?.location||'';document.getElementById('eqNote').value=e?.note||'';openModal('equipmentModal')}
+function saveEquipment(){const id=document.getElementById('eqId').value;const data={category:val('eqCategory'),name:val('eqName').trim(),serial:val('eqSerial').trim(),rate:Number(val('eqRate'))||0,status:val('eqStatus'),location:val('eqLocation').trim(),note:val('eqNote').trim()};if(!data.name)return alert('장비명을 입력하세요');if(id)Object.assign(eq(id),data);else state.equipment.push({id:uid('e'),...data});save();closeModal('equipmentModal');renderEquipment();renderDashboard()}
+function deleteEquipment(id){if(!confirm('삭제할까요?'))return;state.equipment=state.equipment.filter(e=>e.id!==id);state.bookings.forEach(b=>b.equipmentIds=(b.equipmentIds||[]).filter(x=>x!==id));save();renderEquipment()}
+function renderBookings(){const q=(document.getElementById('bkSearch')?.value||'').toLowerCase(),st=val('bkStatusFilter');let list=state.bookings.filter(b=>(!st||effectiveBookingStatus(b)===st)&&(!q||(customerName(b.customerId)+b.equipmentIds.map(equipmentName).join(' ')).toLowerCase().includes(q)));document.getElementById('bookingsTable').innerHTML=list.length?`<div class="data-wrap"><table><thead><tr><th>고객</th><th>장비</th><th>기간</th><th>할인</th><th>합계</th><th>입금</th><th>상태</th><th>관리</th></tr></thead><tbody>${list.map(b=>{const p=priceBreakdown(b);return `<tr><td><b>${esc(customerName(b.customerId))}</b></td><td>${b.equipmentIds.map(id=>`<div>${esc(equipmentName(id))}</div>`).join('')}</td><td>${b.startDate} ${b.startTime}<br>~ ${b.endDate} ${b.endTime}<br><span class="meta">${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)}</span></td><td>${p.contPct}%${b.studentDiscount?' + 학생':''}${b.kongjuDiscount?' + 공주대':''}</td><td class="num"><b>${fmt(p.total)}</b></td><td>${badge(b.payment||'unpaid')}</td><td>${badge(effectiveBookingStatus(b))}</td><td><button class="btn btn-secondary btn-sm" onclick="openBookingModal('${b.id}')">수정</button> <button class="btn btn-secondary btn-sm" onclick="openQuoteForBooking('${b.id}')">견적서</button> <button class="btn btn-success btn-sm" onclick="markReturned('${b.id}')">반납</button> <button class="btn btn-danger btn-sm" onclick="deleteBooking('${b.id}')">삭제</button></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">예약이 없습니다</div>'}
+function openQuoteForBooking(id){showPanel('quotes');document.getElementById('quoteBooking').value=id;renderQuote()}
+function markReturned(id){const b=state.bookings.find(x=>x.id===id);if(b){b.status='returned';b.payment='paid';save();renderBookings();renderDashboard();renderCalendar()}} function deleteBooking(id){if(confirm('예약을 삭제할까요?')){state.bookings=state.bookings.filter(b=>b.id!==id);save();renderBookings();renderCalendar();renderDashboard()}}
+function openBookingModal(id='',presetDate=''){document.getElementById('bkId').value=id;document.getElementById('bookingTitle').textContent=id?'예약 수정':'예약 등록';const b=id?state.bookings.find(x=>x.id===id):null;const d=presetDate||today();document.getElementById('bkCustomerId').value=b?.customerId||'';document.getElementById('bkCustomerSearch').value=b?customerName(b.customerId):'';document.getElementById('bkStartDate').value=b?.startDate||d;document.getElementById('bkEndDate').value=b?.endDate||d;document.getElementById('bkStartTime').value=b?.startTime||'10:00';document.getElementById('bkEndTime').value=b?.endTime||'22:00';document.getElementById('bkStatus').value=b?.status||'reserved';document.getElementById('bkStudentDiscount').checked=!!b?.studentDiscount;document.getElementById('bkKongjuDiscount').checked=!!b?.kongjuDiscount;document.getElementById('bkVat').checked=!!b?.vat;document.getElementById('bkManualDiscount').value=b?.discount||0;document.getElementById('bkPayment').value=b?.payment||'unpaid';document.getElementById('bkNote').value=b?.note||'';chooserSelection=[...(b?.equipmentIds||[])];updateSelectedCustomer();renderSelectedEquipments();updateBookingPreview();openModal('bookingModal')}
+function onBookingDateChange(){renderSelectedEquipments();updateBookingPreview();if(document.getElementById('chooserModal').classList.contains('active'))renderChooser()} function val(id){return document.getElementById(id)?.value||''}
+function showCustomerSuggestions(){const q=val('bkCustomerSearch').toLowerCase();const box=document.getElementById('customerSuggest');const list=state.customers.filter(c=>!q||(c.name+c.phone+c.type).toLowerCase().includes(q)).slice(0,8);box.innerHTML=list.map(c=>`<div class="suggest-item" onclick="selectCustomer('${c.id}')"><b>${esc(c.name)}</b> <span class="badge gray">${esc(c.type)}</span><div class="sub">${esc(c.phone||'')} ${esc(c.note||'')}</div></div>`).join('')+`<div class="suggest-item" onclick="openCustomerFromBooking()">+ 신규 고객 등록</div>`;box.classList.add('active')}
+function selectCustomer(id){document.getElementById('bkCustomerId').value=id;document.getElementById('bkCustomerSearch').value=customerName(id);document.getElementById('customerSuggest').classList.remove('active');const c=cust(id);document.getElementById('bkStudentDiscount').checked=c?.type==='학생/독립영화';updateSelectedCustomer();updateBookingPreview()} function updateSelectedCustomer(){const c=cust(val('bkCustomerId'));document.getElementById('selectedCustomer').innerHTML=c?`선택: <b style="color:#fff">${esc(c.name)}</b> · ${esc(c.type)} · ${esc(c.phone||'')}`:'선택된 고객 없음'}
+function openCustomerFromBooking(){window.__returnToBooking=true;openCustomerModal('',val('bkCustomerSearch'));document.getElementById('customerModal').classList.add('front')}
+function openCustomerModal(id='',prefill=''){document.getElementById('custId').value=id;const c=id?cust(id):null;document.getElementById('customerTitle').textContent=id?'고객 수정':'고객 등록';document.getElementById('custType').value=c?.type||'일반';document.getElementById('custName').value=c?.name||prefill||'';document.getElementById('custContact').value=c?.contact||'';document.getElementById('custPhone').value=c?.phone||'';document.getElementById('custKakao').value=c?.kakao||'';document.getElementById('custEmail').value=c?.email||'';document.getElementById('custNote').value=c?.note||'';openModal('customerModal')}
+function saveCustomer(){const id=val('custId');const data={type:val('custType'),name:val('custName').trim(),contact:val('custContact').trim(),phone:val('custPhone').trim(),kakao:val('custKakao').trim(),email:val('custEmail').trim(),note:val('custNote').trim()};if(!data.name)return alert('고객명을 입력하세요');let saved;if(id){saved=cust(id);Object.assign(saved,data)}else{saved={id:uid('c'),...data};state.customers.push(saved)}save();closeModal('customerModal');document.getElementById('customerModal').classList.remove('front');renderCustomers();if(window.__returnToBooking){window.__returnToBooking=false;openModal('bookingModal');selectCustomer(saved.id)}}
+function renderCustomers(){const q=(val('custSearch')).toLowerCase(),t=val('custTypeFilter');let list=state.customers.filter(c=>(!t||c.type===t)&&(!q||(c.name+c.phone+c.note+c.type).toLowerCase().includes(q)));document.getElementById('customersTable').innerHTML=list.length?`<div class="data-wrap"><table><thead><tr><th>구분</th><th>이름</th><th>연락처</th><th>거래건수</th><th>비고</th><th>관리</th></tr></thead><tbody>${list.map(c=>`<tr><td>${esc(c.type)}</td><td><b>${esc(c.name)}</b></td><td>${esc(c.phone||'')}<br><span class="meta">${esc(c.email||'')}</span></td><td>${state.bookings.filter(b=>b.customerId===c.id).length}</td><td>${esc(c.note||'')}</td><td><button class="btn btn-secondary btn-sm" onclick="openCustomerModal('${c.id}')">수정</button> <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}')">삭제</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">고객이 없습니다</div>'}
+function deleteCustomer(id){if(confirm('고객을 삭제할까요?')){state.customers=state.customers.filter(c=>c.id!==id);save();renderCustomers()}}
+function renderSelectedEquipments(){const box=document.getElementById('selectedEquipments');if(!chooserSelection.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}const days=billDays(val('bkStartDate'),val('bkStartTime'),val('bkEndDate'),val('bkEndTime'));box.innerHTML=`<table class="selected-table"><thead><tr><th>장비</th><th>일 단가</th><th>청구</th><th></th></tr></thead><tbody>${chooserSelection.map(id=>{const e=eq(id)||{};return `<tr><td><b>${esc(e.name||'')}</b><br><span class="meta">${esc(e.serial||'')}</span></td><td class="num">${fmt(e.rate||0)}</td><td class="num">${days}일 · ${fmt((e.rate||0)*days)}</td><td><button class="btn btn-danger btn-sm" onclick="chooserSelection=chooserSelection.filter(x=>x!=='${id}');renderSelectedEquipments();updateBookingPreview()">제거</button></td></tr>`}).join('')}</tbody></table>`}
+function openEquipmentChooser(){chooserSelection=[...chooserSelection];currentChooserCat=currentChooserCat||state.categories[0];currentChooserModel='';openModal('chooserModal');renderChooser()} function renderChooser(){const sD=val('bkStartDate'),eD=val('bkEndDate'),sT=val('bkStartTime'),eT=val('bkEndTime'),ignore=val('bkId'),q=val('chooserSearch').toLowerCase();document.getElementById('chooserDateLabel').textContent=`${sD} ${sT} ~ ${eD} ${eT} · ${rentalDurationText(sD,sT,eD,eT)}`;document.getElementById('chooserCats').innerHTML=state.categories.map(c=>`<button class="side-btn ${currentChooserCat===c?'active':''}" onclick="currentChooserCat='${esc(c)}';currentChooserModel='';renderChooser()">${esc(c)}</button>`).join('');let filtered=state.equipment.filter(e=>e.category===currentChooserCat&&(!q||(e.name+e.serial).toLowerCase().includes(q)));const groups={};filtered.forEach(e=>(groups[modelKey(e)]=groups[modelKey(e)]||[]).push(e));const models=Object.keys(groups);if(!currentChooserModel||!groups[currentChooserModel])currentChooserModel=models[0]||'';document.getElementById('chooserModels').innerHTML=models.map(m=>{const list=groups[m],available=list.filter(e=>isAvailable(e,sD,eD,sT,eT,ignore)||chooserSelection.includes(e.id)).length,selected=list.filter(e=>chooserSelection.includes(e.id)).length;return `<div class="model-card ${currentChooserModel===m?'expanded':''}" onclick="currentChooserModel='${esc(m)}';renderChooser()"><div class="model-title">${esc(m)}</div><div class="model-meta">총 ${list.length}대 · 가능 ${available}대 · 선택 ${selected}대<br>${fmt(list[0].rate)}/일</div></div>`}).join('')||'<div class="empty">장비 모델 없음</div>';const inst=groups[currentChooserModel]||[];document.getElementById('chooserInstances').innerHTML=inst.map(e=>{const conflicts=conflictBookings(e.id,sD,eD,sT,eT,ignore);const selected=chooserSelection.includes(e.id);const ok=(e.status==='available'&&conflicts.length===0)||selected;const reason=e.status!=='available'?`상태: ${statusText(e.status)}`:conflicts[0]?`예약 불가능 (${conflicts[0].startDate} ${conflicts[0].startTime}~${conflicts[0].endDate} ${conflicts[0].endTime} ${customerName(conflicts[0].customerId)} 대여중)`:'예약 가능';return `<label class="instance ${ok?'':'disabled'}"><input type="checkbox" value="${e.id}" ${selected?'checked':''} ${ok?'':'disabled'} onchange="toggleChooser('${e.id}',this.checked)"><div><div class="main">${esc(e.serial||e.name)}</div><div class="sub">${esc(e.name)} · ${esc(reason)}</div></div></label>`}).join('')||'<div class="empty">모델을 선택하세요</div>';renderChooserSummary()}
+function renderChooserSummary(){const box=document.getElementById('chooserSelectedSummary');if(!box)return;if(!chooserSelection.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}const b={equipmentIds:chooserSelection,startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0};const p=priceBreakdown(b);const days=p.days;box.innerHTML=`<div class="meta" style="margin-bottom:8px">${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)}</div>${chooserSelection.map(id=>{const e=eq(id)||{};return `<div class="price-row"><span>${esc(e.name||'')}<br><small>${esc(e.serial||'')}</small></span><b>${fmt((e.rate||0)*days)}</b></div>`}).join('')}<div class="price-row"><span>장비 소계</span><b>${fmt(p.base)}</b></div><div class="price-row"><span>회차할인 ${p.contPct}%</span><b>- ${fmt(p.cont)}</b></div>${p.studentPct?`<div class="price-row"><span>학생/독립영화 ${p.studentPct}%</span><b>- ${fmt(p.student)}</b></div>`:''}${p.kongjuPct?`<div class="price-row"><span>공주대 ${p.kongjuPct}%</span><b>- ${fmt(p.kongju)}</b></div>`:''}<div class="price-row total"><span>예상 합계</span><b>${fmt(p.total)}</b></div>`}
+function toggleChooser(id,checked){chooserSelection=checked?[...new Set([...chooserSelection,id])]:chooserSelection.filter(x=>x!==id);renderChooser();renderSelectedEquipments();updateBookingPreview()} function applyChooser(){closeModal('chooserModal');renderSelectedEquipments();updateBookingPreview()}
+function updateBookingPreview(){if(!document.getElementById('bookingPreview'))return;const dur=document.getElementById('rentalDurationLabel');if(dur)dur.textContent=rentalDurationText(val('bkStartDate'),val('bkStartTime'),val('bkEndDate'),val('bkEndTime'));const b={equipmentIds:chooserSelection,startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0};if(!b.equipmentIds.length)return document.getElementById('bookingPreview').innerHTML='장비를 선택하세요';const p=priceBreakdown(b);const itemRows=b.equipmentIds.map(id=>{const e=eq(id)||{};return `<div class="price-row"><span>${esc(e.name||'')} <small>${esc(e.serial||'')}</small><br><small>${fmt(e.rate||0)}/일 × ${p.days}일</small></span><b>${fmt((e.rate||0)*p.days)}</b></div>`}).join('');document.getElementById('bookingPreview').innerHTML=`<div class="price-row"><span>실 대여기간</span><b>${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)}</b></div>${itemRows}<div class="price-row"><span>장비 소계</span><b>${fmt(p.base)}</b></div><div class="price-row"><span>회차할인 ${p.contPct}%</span><b>- ${fmt(p.cont)}</b></div>${p.studentPct?`<div class="price-row"><span>학생/독립영화 ${p.studentPct}%</span><b>- ${fmt(p.student)}</b></div>`:''}${p.kongjuPct?`<div class="price-row"><span>공주대 ${p.kongjuPct}%</span><b>- ${fmt(p.kongju)}</b></div>`:''}${p.manual?`<div class="price-row"><span>추가할인</span><b>- ${fmt(p.manual)}</b></div>`:''}${b.vat?`<div class="price-row fhk-v236-preview-supply"><span>공급가</span><b>${fmt(Math.max(0,p.total-p.vat))}</b></div><div class="price-row"><span>VAT 세액</span><b>${fmt(p.vat)}</b></div>`:''}<div class="price-row total"><span>${b.vat?'최종 합계 (VAT 포함)':'최종 합계'}</span><b>${fmt(p.total)}</b></div>`;renderChooserSummary()}
+function saveBooking(){const cId=val('bkCustomerId');if(!cId)return alert('고객을 선택하세요');if(!chooserSelection.length)return alert('장비를 선택하세요');const data={customerId:cId,equipmentIds:[...chooserSelection],startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),status:val('bkStatus'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0,payment:val('bkPayment'),note:val('bkNote')};if(dt(data.startDate,data.startTime)>=dt(data.endDate,data.endTime))return alert('반납 시간이 시작 시간보다 뒤여야 합니다');const id=val('bkId');const blocked=data.equipmentIds.flatMap(eid=>conflictBookings(eid,data.startDate,data.endDate,data.startTime,data.endTime,id).map(b=>`${equipmentName(eid)}: ${b.startDate}~${b.endDate} ${customerName(b.customerId)}`));if(blocked.length)return alert('예약 불가능 장비가 포함되어 있습니다.\n\n'+blocked.join('\n'));if(id)Object.assign(state.bookings.find(b=>b.id===id),data);else state.bookings.push({id:uid('b'),createdAt:new Date().toISOString(),...data});save();closeModal('bookingModal');renderBookings();renderCalendar();renderDashboard();renderQuotes()}
+function renderCalendar(){const y=calMonth.getFullYear(),m=calMonth.getMonth();document.getElementById('calTitle').textContent=`${y}년 ${m+1}월`;const first=new Date(y,m,1),last=new Date(y,m+1,0);let cells=['일','월','화','수','목','금','토'].map(d=>`<div class="cal-cell day">${d}</div>`);for(let i=0;i<first.getDay();i++)cells.push('<div></div>');for(let d=1;d<=last.getDate();d++){const date=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;const bs=state.bookings.filter(b=>b.startDate===date||b.endDate===date);cells.push(`<div class="cal-cell" onclick="openBookingModal('', '${date}')"><div class="cal-date">${d}</div>${bs.map(b=>`<div class="cal-booking ${b.endDate===date?'cal-return':''} ${effectiveBookingStatus(b)==='overdue'?'cal-overdue':''}" onclick="event.stopPropagation();openBookingModal('${b.id}')">${b.startDate===date?'출고':'반납'} ${esc(customerName(b.customerId))}</div>`).join('')}</div>`)}document.getElementById('calGrid').innerHTML=cells.join('')}
+function moveMonth(n){calMonth=new Date(calMonth.getFullYear(),calMonth.getMonth()+n,1);renderCalendar()}
+function renderQuotes(){const sel=document.getElementById('quoteBooking');sel.innerHTML='<option value="">예약을 선택하세요</option>'+state.bookings.map(b=>`<option value="${b.id}">${b.startDate} ${customerName(b.customerId)} / ${b.equipmentIds.length}개</option>`).join('');renderQuote()} function renderQuote(){const id=val('quoteBooking');const b=state.bookings.find(x=>x.id===id);if(!b)return document.getElementById('quoteContent').innerHTML='<div class="empty">예약을 선택하세요</div>';const c=cust(b.customerId)||{};const p=priceBreakdown(b);document.getElementById('quoteContent').innerHTML=`<div class="quote-doc"><div class="quote-title">임대차 계약서</div><table style="margin-bottom:12px"><tr><th>공급자</th><td>필름에이치케이 / 대표 민현기 / 415-32-00727</td><th>연락처</th><td>0507-1355-4807</td></tr><tr><th>임차인</th><td>${esc(c.name||'')}</td><th>연락처</th><td>${esc(c.phone||'')}</td></tr><tr><th>대여기간</th><td colspan="3">${b.startDate} ${b.startTime} ~ ${b.endDate} ${b.endTime} (${p.days}일)</td></tr></table><table><thead><tr><th>No.</th><th>구분</th><th>품목</th><th>수량</th><th>기간</th><th>단가</th><th>합산금액</th><th>비고</th></tr></thead><tbody>${b.equipmentIds.map((id,i)=>{const e=eq(id)||{};return `<tr><td>${i+1}</td><td>${esc(e.category||'')}</td><td>${esc(e.name||'')}<br><small>${esc(e.serial||'')}</small></td><td>1</td><td>${p.days}일</td><td class="num">${fmt(e.rate||0)}</td><td class="num">${fmt((e.rate||0)*p.days)}</td><td>${esc(e.note||'')}</td></tr>`}).join('')}<tr><td colspan="6">합계</td><td class="num">${fmt(p.base)}</td><td></td></tr><tr><td colspan="6">회차할인 ${p.contPct}%</td><td class="num">- ${fmt(p.cont)}</td><td></td></tr>${p.studentPct?`<tr><td colspan="6">학생/독립영화 할인 ${p.studentPct}%</td><td class="num">- ${fmt(p.student)}</td><td></td></tr>`:''}${p.kongjuPct?`<tr><td colspan="6">공주대 할인 ${p.kongjuPct}%</td><td class="num">- ${fmt(p.kongju)}</td><td></td></tr>`:''}${p.manual?`<tr><td colspan="6">추가할인</td><td class="num">- ${fmt(p.manual)}</td><td></td></tr>`:''}${b.vat?`<tr class="fhk-v236-vat-supply-row"><td colspan="6">공급가</td><td class="num">${fmt(Math.max(0,p.total-p.vat))}</td><td></td></tr><tr class="fhk-v236-vat-tax-row"><td colspan="6">VAT 세액</td><td class="num">${fmt(p.vat)}</td><td></td></tr>`:''}<tr><th colspan="6">${b.vat?'총계 (VAT 포함)':'총계'}</th><th class="num">${fmt(p.total)}</th><th></th></tr></tbody></table><p style="font-size:12px;margin-top:14px;line-height:1.7">※ 반납일자와 시간을 준수해 주세요. 연장 시 사전 문의가 필요합니다.<br>※ 장비 손상/분실 시 수리비 또는 대체 구입 비용이 청구될 수 있습니다.</p></div>`}
+function copyQuoteText(){const id=val('quoteBooking'),b=state.bookings.find(x=>x.id===id);if(!b)return;const p=priceBreakdown(b);navigator.clipboard.writeText(`[FILM HK RENTAL 견적]\n고객: ${customerName(b.customerId)}\n기간: ${b.startDate} ${b.startTime} ~ ${b.endDate} ${b.endTime}\n장비:\n- ${b.equipmentIds.map(equipmentName).join('\n- ')}\n총계: ${fmt(p.total)}`);alert('복사되었습니다')}
+function renderSettings(){document.getElementById('studentPct').value=state.settings.studentPct;document.getElementById('kongjuPct').value=state.settings.kongjuPct;document.getElementById('vatPct').value=state.settings.vatPct;document.getElementById('discountEditor').innerHTML=state.settings.discountRules.sort((a,b)=>a.days-b.days).map((r,i)=>`<div class="form-row"><label>${r.days}일 이상</label><div style="display:flex;gap:6px"><input type="number" value="${r.pct}" onchange="state.settings.discountRules[${i}].pct=Number(this.value)||0;save()"><button class="btn btn-danger btn-sm" onclick="state.settings.discountRules.splice(${i},1);save();renderSettings()">삭제</button></div></div>`).join('')} function saveSettings(){state.settings.studentPct=Number(val('studentPct'))||0;state.settings.kongjuPct=Number(val('kongjuPct'))||0;state.settings.vatPct=Number(val('vatPct'))||0;save();renderSettings()} function addDiscountRule(){const d=Number(prompt('몇 일 이상?'));const p=Number(prompt('할인율 %'));if(d)state.settings.discountRules.push({days:d,pct:p||0});save();renderSettings()}
+function openAvailabilityModal(){document.getElementById('avStart').value=today();document.getElementById('avEnd').value=today();renderAvailability();openModal('availabilityModal')} function renderAvailability(){const s=val('avStart'),e=val('avEnd');document.getElementById('availabilityResult').innerHTML=`<div class="data-wrap"><table><thead><tr><th>장비</th><th>상태</th><th>사유</th></tr></thead><tbody>${state.equipment.map(x=>{const c=conflictBookings(x.id,s,e,'10:00','22:00','');const ok=x.status==='available'&&!c.length;return `<tr><td>${esc(equipmentName(x.id))}</td><td>${ok?badge('available'):badge('reserved')}</td><td>${x.status!=='available'?statusText(x.status):c[0]?`${c[0].startDate}~${c[0].endDate} ${customerName(c[0].customerId)} 대여중`:''}</td></tr>`}).join('')}</tbody></table></div>`}
+function openModal(id){document.getElementById(id).classList.add('active')} function closeModal(id){const el=document.getElementById(id);el.classList.remove('active');el.classList.remove('front')} function fillCategorySelect(id){document.getElementById(id).innerHTML=state.categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')} function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='filmhk-rental-backup.json';a.click()} function importData(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{state=migrate(JSON.parse(r.result));save();init();alert('복원 완료')};r.readAsText(f)} function resetData(){if(confirm('현재 데이터를 초기화하고 샘플 데이터로 복구할까요?')){state=seed();save();init()}}
+function runSimpleAI(){const text=val('aiInput').trim();if(!text)return;alert('현재 v5 HTML 단독판에서는 자연어 예약 파서는 데모입니다. 실제 AI 파서는 Next.js/Supabase 버전에 연결하는 것이 안전합니다.\n\n입력한 내용: '+text)}
+function init(){document.getElementById('todayText').textContent=new Date().toLocaleDateString('ko-KR');document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>showPanel(b.dataset.panel));if(sessionStorage.getItem(AUTH_KEY)==='1')document.getElementById('loginGate').style.display='none';if(!localStorage.getItem(PW_KEY))localStorage.setItem(PW_KEY,'filmhk2026');save();renderDashboard();renderEquipment();renderBookings();renderCalendar();renderCustomers();renderQuotes();renderSettings()} document.addEventListener('click',e=>{if(!e.target.closest('.customer-search-box'))document.getElementById('customerSuggest')?.classList.remove('active')});init();
+</script>
+<script>
+(function(){
+  const DEFAULT_ACCESSORY_ITEMS=['SDI 숏라인','HDMI 숏라인','SDI 롱라인','HDMI 롱라인','D-tap 전원 라인'];
+  function clone(x){return JSON.parse(JSON.stringify(x||{}));}
+  function addDaysStr(dateStr,days){const d=new Date(dateStr+'T00:00:00');d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}
+  function monthKey(d=new Date()){return d.toISOString().slice(0,7)}
+  function isSameDate(a,b){return a===b}
+  function isTomorrowDate(a){return a===addDaysStr(today(),1)}
+  function bookingAlertClass(b){
+    if(effectiveBookingStatus(b)==='overdue') return 'row-overdue';
+    if(isSameDate(b.endDate,today())) return 'row-return-today';
+    if(isSameDate(b.startDate,today())) return 'row-start-today';
+    if(isTomorrowDate(b.startDate)) return 'row-start-tomorrow';
+    if(isTomorrowDate(b.endDate)) return 'row-return-tomorrow';
+    return '';
+  }
+  function bookingAlertLabel(b){
+    if(effectiveBookingStatus(b)==='overdue') return '<span class="badge danger">연체</span>';
+    const arr=[];
+    if(isSameDate(b.endDate,today())) arr.push('<span class="badge warn">오늘 반납</span>');
+    if(isSameDate(b.startDate,today())) arr.push('<span class="badge info">오늘 출고</span>');
+    if(isTomorrowDate(b.startDate)) arr.push('<span class="badge gray">내일 출고</span>');
+    if(isTomorrowDate(b.endDate)) arr.push('<span class="badge gray">내일 반납</span>');
+    return arr.join(' ');
+  }
+  function ensureV7Migrations(){
+    state.settings=state.settings||{};
+    if(!Array.isArray(state.settings.accessoryItems)) state.settings.accessoryItems=[...DEFAULT_ACCESSORY_ITEMS];
+    state.bookings.forEach(b=>{ if(!b.accessories) b.accessories={}; });
+    save();
+  }
+  function patchStyles(){
+    if(document.getElementById('v7Styles'))return;
+    const style=document.createElement('style');style.id='v7Styles';style.textContent=`
+      .row-return-today td{background:rgba(251,191,36,.10)!important;border-top:1px solid rgba(251,191,36,.35)}
+      .row-start-today td{background:rgba(96,165,250,.10)!important;border-top:1px solid rgba(96,165,250,.35)}
+      .row-start-tomorrow td,.row-return-tomorrow td{background:rgba(255,255,255,.045)!important}
+      .row-overdue td{background:rgba(239,68,68,.12)!important;border-top:1px solid rgba(239,68,68,.35)}
+      .mini-x{border:0;background:#3a2024;color:#fca5a5;border-radius:999px;width:20px;height:20px;line-height:20px;cursor:pointer;font-weight:900;text-align:center}
+      .mini-x:hover{background:#7f1d1d;color:#fff}
+      .model-suggest-wrap{position:relative}.model-suggest{position:absolute;left:0;right:0;top:42px;background:#111318;border:1px solid #3b3f4a;border-radius:8px;z-index:260;max-height:260px;overflow:auto;display:none}.model-suggest.active{display:block}.stat-modal-table td,.stat-modal-table th{white-space:nowrap}
+      .accessory-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:8px}.accessory-field{background:#0f1115;border:1px solid #2a2d35;border-radius:8px;padding:9px}.accessory-field label{display:block;font-size:12px;color:#9ca3af;margin-bottom:5px}.accessory-field input{width:100%}
+      .settings-savebar{position:sticky;bottom:0;background:#111318;border:1px solid #2a2d35;border-radius:10px;padding:12px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+    `;document.head.appendChild(style);
+  }
+  function patchStaticDom(){
+    document.title='FILM HK RENTAL 관리자 v236';
+    const h1=document.querySelector('header h1'); if(h1 && !h1.textContent.includes('v7')) h1.textContent=h1.textContent.replace('관리자','관리자 v236');
+    const dashHeader=document.querySelector('#dashboard .panel-header');
+    if(dashHeader && !document.getElementById('openStatsBtn')) dashHeader.insertAdjacentHTML('beforeend','<button id="openStatsBtn" class="btn btn-secondary" onclick="openStatsModal()">예약 통계</button>');
+    const selectedCard=document.querySelector('#bookingModal .card:nth-of-type(2)');
+    if(selectedCard && !document.getElementById('bookingAccessories')){
+      const btn=selectedCard.querySelector('button[onclick="openEquipmentChooser()"]');
+      btn.insertAdjacentHTML('afterend','<div class="price-box" id="bookingAccessories" style="margin-top:14px"><b>세부 구성품</b><div id="bookingAccessoryInputs"></div></div>');
+    }
+    const eqName=document.getElementById('eqName');
+    if(eqName && !document.getElementById('modelSuggest')){
+      const row=eqName.closest('.form-row');
+      const parent=eqName.parentElement;
+      const wrap=document.createElement('div');wrap.className='model-suggest-wrap';
+      parent.replaceChild(wrap,eqName);wrap.appendChild(eqName);
+      wrap.insertAdjacentHTML('beforeend','<div class="model-suggest" id="modelSuggest"></div>');
+      eqName.setAttribute('autocomplete','off');
+      eqName.addEventListener('input',showModelSuggestions);
+      eqName.addEventListener('focus',showModelSuggestions);
+    }
+    if(!document.getElementById('statsModal')) document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" id="statsModal"><div class="modal large"><div class="modal-header"><h3>예약 통계</h3><button class="close" onclick="closeModal('statsModal')">×</button></div><div class="modal-body"><div class="toolbar"><input id="statsStart" type="date"><input id="statsEnd" type="date"><button class="btn btn-primary" onclick="renderStatsModal()">조회</button></div><div id="statsContent"></div></div></div></div>`);
+  }
+
+  function nextSerialForModel(model){
+    const list=state.equipment.filter(e=>modelKey(e)===model);
+    if(!list.length)return '';
+    const serials=list.map(e=>e.serial||'').filter(Boolean);
+    let best=serials[serials.length-1]||'';
+    let max=-1, prefix='', width=0;
+    serials.forEach(s=>{const m=s.match(/^(.*?)(\d+)$/); if(m){const n=Number(m[2]); if(n>max){max=n;prefix=m[1];width=m[2].length;best=s}}});
+    if(max>=0)return prefix+String(max+1).padStart(width,'0');
+    return best?best+'-2':'';
+  }
+  function templateForModel(model){return state.equipment.find(e=>modelKey(e)===model)||null;}
+  window.fillEquipmentFromModel=function(model){const t=templateForModel(model); if(!t)return; document.getElementById('eqName').value=t.name; document.getElementById('eqCategory').value=t.category; document.getElementById('eqRate').value=t.rate||0; document.getElementById('eqSerial').value=nextSerialForModel(model); document.getElementById('eqLocation').value=t.location||''; document.getElementById('eqNote').value=t.note||''; document.getElementById('modelSuggest')?.classList.remove('active');};
+  window.showModelSuggestions=function(){const input=document.getElementById('eqName'); const box=document.getElementById('modelSuggest'); if(!input||!box)return; const q=input.value.toLowerCase().trim(); const models=[...new Set(state.equipment.map(e=>modelKey(e)).filter(Boolean))].filter(m=>!q||m.toLowerCase().includes(q)).slice(0,12); if(!models.length){box.classList.remove('active');return;} box.innerHTML=models.map(m=>{const t=templateForModel(m)||{};return `<div class="suggest-item" onclick="fillEquipmentFromModel('${esc(m)}')"><b>${esc(m)}</b><div class="sub">${esc(t.category||'')} · ${fmt(t.rate||0)}/일 · 다음 관리번호 ${esc(nextSerialForModel(m)||'-')}</div></div>`}).join(''); box.classList.add('active');};
+
+  const oldOpenEquipmentModal=window.openEquipmentModal||openEquipmentModal;
+  window.openEquipmentModal=function(id='',sameModel=''){
+    oldOpenEquipmentModal(id,sameModel);
+    if(!id && sameModel){ const t=templateForModel(sameModel); if(t){ document.getElementById('eqCategory').value=t.category; document.getElementById('eqRate').value=t.rate||0; document.getElementById('eqSerial').value=nextSerialForModel(sameModel); document.getElementById('eqLocation').value=t.location||''; document.getElementById('eqNote').value=t.note||''; }}
+  };
+
+  window.renderAccessoryInputs=function(accessories={}){
+    const box=document.getElementById('bookingAccessoryInputs'); if(!box)return;
+    const items=state.settings.accessoryItems||DEFAULT_ACCESSORY_ITEMS;
+    box.innerHTML=`<div class="accessory-grid">${items.map(name=>`<div class="accessory-field"><label>${esc(name)}</label><input type="number" min="0" step="1" value="${Number(accessories[name]||0)}" data-accessory-name="${esc(name)}" oninput="updateBookingPreview()"></div>`).join('')}</div>`;
+  };
+  window.collectAccessories=function(){const data={};document.querySelectorAll('[data-accessory-name]').forEach(i=>{const v=Number(i.value)||0;if(v>0)data[i.dataset.accessoryName]=v});return data;};
+  function accessoryRowsHTML(accessories){const entries=Object.entries(accessories||{}).filter(([k,v])=>Number(v)>0);return entries.length?entries.map(([name,qty],i)=>`<tr><td>${i+1}</td><td>세부 구성품</td><td>${esc(name)}</td><td>${qty}</td><td>-</td><td class="num">0원</td><td class="num">0원</td><td>수량 확인용</td></tr>`).join(''):'';}
+  function accessoryText(accessories){const entries=Object.entries(accessories||{}).filter(([k,v])=>Number(v)>0);return entries.length?`\n세부 구성품:\n${entries.map(([n,q])=>`- ${n}: ${q}개`).join('\n')}`:'';}
+
+  const oldOpenBookingModal=window.openBookingModal||openBookingModal;
+  window.openBookingModal=function(id='',presetDate=''){
+    document.getElementById('bkId').value=id;
+    document.getElementById('bookingTitle').textContent=id?'예약 수정':'예약 등록';
+    const b=id?state.bookings.find(x=>x.id===id):null;
+    const d=presetDate||today();
+    const startTime=b?.startTime||'10:00';
+    document.getElementById('bkCustomerId').value=b?.customerId||'';
+    document.getElementById('bkCustomerSearch').value=b?customerName(b.customerId):'';
+    document.getElementById('bkStartDate').value=b?.startDate||d;
+    document.getElementById('bkStartTime').value=startTime;
+    document.getElementById('bkEndDate').value=b?.endDate||addDaysStr(d,1);
+    document.getElementById('bkEndTime').value=b?.endTime||startTime;
+    document.getElementById('bkStatus').value=b?.status||'reserved';
+    document.getElementById('bkStudentDiscount').checked=!!b?.studentDiscount;
+    document.getElementById('bkKongjuDiscount').checked=!!b?.kongjuDiscount;
+    document.getElementById('bkVat').checked=!!b?.vat;
+    document.getElementById('bkManualDiscount').value=b?.discount||0;
+    document.getElementById('bkPayment').value=b?.payment||'unpaid';
+    document.getElementById('bkNote').value=b?.note||'';
+    chooserSelection=[...(b?.equipmentIds||[])];
+    updateSelectedCustomer();renderSelectedEquipments();renderAccessoryInputs(b?.accessories||{});updateBookingPreview();openModal('bookingModal');
+  };
+  window.onBookingDateChange=function(){
+    const sD=val('bkStartDate'),sT=val('bkStartTime'),eD=val('bkEndDate'),eT=val('bkEndTime');
+    if(sD&&sT&&(!eD||dt(eD,eT)<=dt(sD,sT))){document.getElementById('bkEndDate').value=addDaysStr(sD,1);/* endTime은 유지하여 루프 방지 */}
+    renderSelectedEquipments();updateBookingPreview();if(document.getElementById('chooserModal').classList.contains('active'))renderChooser();
+  };
+  const oldSaveBooking=window.saveBooking||saveBooking;
+  window.saveBooking=function(){
+    const cId=val('bkCustomerId');if(!cId)return alert('고객을 선택하세요');if(!chooserSelection.length)return alert('장비를 선택하세요');
+    const data={customerId:cId,equipmentIds:[...chooserSelection],startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),status:val('bkStatus'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0,payment:val('bkPayment'),note:val('bkNote'),accessories:collectAccessories()};
+    if(dt(data.startDate,data.startTime)>=dt(data.endDate,data.endTime))return alert('반납 시간이 시작 시간보다 뒤여야 합니다');
+    const id=val('bkId');const blocked=data.equipmentIds.flatMap(eid=>conflictBookings(eid,data.startDate,data.endDate,data.startTime,data.endTime,id).map(b=>`${equipmentName(eid)}: ${b.startDate}~${b.endDate} ${customerName(b.customerId)}`));
+    if(blocked.length)return alert('예약 불가능 장비가 포함되어 있습니다.\n\n'+blocked.join('\n'));
+    if(id)Object.assign(state.bookings.find(b=>b.id===id),data);else state.bookings.push({id:uid('b'),createdAt:new Date().toISOString(),...data});
+    save();closeModal('bookingModal');renderBookings();renderCalendar();renderDashboard();renderQuotes();
+  };
+
+  window.renderChooserSummary=function(){
+    const box=document.getElementById('chooserSelectedSummary');if(!box)return;if(!chooserSelection.length){box.innerHTML='<div class="empty" style="padding:18px">선택된 장비 없음</div>';return}
+    const b={equipmentIds:chooserSelection,startDate:val('bkStartDate'),startTime:val('bkStartTime'),endDate:val('bkEndDate'),endTime:val('bkEndTime'),studentDiscount:document.getElementById('bkStudentDiscount').checked,kongjuDiscount:document.getElementById('bkKongjuDiscount').checked,vat:document.getElementById('bkVat').checked,discount:Number(val('bkManualDiscount'))||0};const p=priceBreakdown(b);const days=p.days;
+    box.innerHTML=`<div class="meta" style="margin-bottom:8px">${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)}</div>${chooserSelection.map(id=>{const e=eq(id)||{};return `<div class="price-row"><span>${esc(e.name||'')}<br><small>${esc(e.serial||'')} · ${fmt(e.rate||0)}/일 × ${days}일</small></span><span style="display:flex;align-items:center;gap:8px"><b>${fmt((e.rate||0)*days)}</b><button class="mini-x" onclick="removeChooserItem('${id}')" title="선택 제거">×</button></span></div>`}).join('')}<div class="price-row"><span>장비 소계</span><b>${fmt(p.base)}</b></div><div class="price-row"><span>회차할인 ${p.contPct}%</span><b>- ${fmt(p.cont)}</b></div>${p.studentPct?`<div class="price-row"><span>학생/독립영화 ${p.studentPct}%</span><b>- ${fmt(p.student)}</b></div>`:''}${p.kongjuPct?`<div class="price-row"><span>공주대 ${p.kongjuPct}%</span><b>- ${fmt(p.kongju)}</b></div>`:''}${p.manual?`<div class="price-row"><span>추가할인</span><b>- ${fmt(p.manual)}</b></div>`:''}<div class="price-row total"><span>예상 합계</span><b>${fmt(p.total)}</b></div>`;
+  };
+  window.removeChooserItem=function(id){chooserSelection=chooserSelection.filter(x=>x!==id);renderChooser();renderSelectedEquipments();updateBookingPreview();};
+
+  window.renderBookings=function(){
+    const q=(document.getElementById('bkSearch')?.value||'').toLowerCase(),st=val('bkStatusFilter');let list=state.bookings.filter(b=>(!st||effectiveBookingStatus(b)===st)&&(!q||(customerName(b.customerId)+b.equipmentIds.map(equipmentName).join(' ')).toLowerCase().includes(q))).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime));
+    document.getElementById('bookingsTable').innerHTML=list.length?`<div class="data-wrap"><table><thead><tr><th>고객</th><th>장비</th><th>기간</th><th>준비 알림</th><th>할인</th><th>합계</th><th>입금</th><th>상태</th><th>관리</th></tr></thead><tbody>${list.map(b=>{const p=priceBreakdown(b);return `<tr class="${bookingAlertClass(b)}"><td><b>${esc(customerName(b.customerId))}</b></td><td>${b.equipmentIds.map(id=>`<div>${esc(equipmentName(id))}</div>`).join('')}</td><td>${b.startDate} ${b.startTime}<br>~ ${b.endDate} ${b.endTime}<br><span class="meta">${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)}</span></td><td>${bookingAlertLabel(b)||'<span class="meta">-</span>'}</td><td>${p.contPct}%${b.studentDiscount?' + 학생':''}${b.kongjuDiscount?' + 공주대':''}</td><td class="num"><b>${fmt(p.total)}</b></td><td>${badge(b.payment||'unpaid')}</td><td>${badge(effectiveBookingStatus(b))}</td><td><button class="btn btn-secondary btn-sm" onclick="openBookingModal('${b.id}')">수정</button> <button class="btn btn-secondary btn-sm" onclick="openQuoteForBooking('${b.id}')">견적서</button> <button class="btn btn-success btn-sm" onclick="markReturned('${b.id}')">반납</button> <button class="btn btn-danger btn-sm" onclick="deleteBooking('${b.id}')">삭제</button></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">예약이 없습니다</div>';
+  };
+
+  window.renderCustomers=function(){
+    const q=(val('custSearch')).toLowerCase(),t=val('custTypeFilter');let list=state.customers.filter(c=>(!t||c.type===t)&&(!q||(c.name+c.phone+c.note+c.type).toLowerCase().includes(q)));
+    document.getElementById('customersTable').innerHTML=list.length?`<div class="data-wrap"><table><thead><tr><th>구분</th><th>이름</th><th>연락처</th><th>거래건수</th><th>매출</th><th>비고</th><th>관리</th></tr></thead><tbody>${list.map(c=>{const bs=state.bookings.filter(b=>b.customerId===c.id&&b.status!=='cancelled');const total=bs.reduce((s,b)=>s+priceBreakdown(b).total,0);return `<tr><td>${esc(c.type)}</td><td><button class="btn btn-secondary btn-sm" onclick="openCustomerHistory('${c.id}')"><b>${esc(c.name)}</b></button></td><td>${esc(c.phone||'')}<br><span class="meta">${esc(c.email||'')}</span></td><td>${bs.length}</td><td class="num">${fmt(total)}</td><td>${esc(c.note||'')}</td><td><button class="btn btn-secondary btn-sm" onclick="openCustomerModal('${c.id}')">수정</button> <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}')">삭제</button></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">고객이 없습니다</div>';
+  };
+  window.openCustomerHistory=function(id){
+    const c=cust(id);if(!c)return; if(!document.getElementById('customerHistoryModal')) document.body.insertAdjacentHTML('beforeend','<div class="modal-bg" id="customerHistoryModal"><div class="modal large"><div class="modal-header"><h3 id="customerHistoryTitle">고객 거래내역</h3><button class="close" onclick="closeModal(\'customerHistoryModal\')">×</button></div><div class="modal-body" id="customerHistoryBody"></div></div></div>');
+    const bs=state.bookings.filter(b=>b.customerId===id&&b.status!=='cancelled').sort((a,b)=>dt(b.startDate,b.startTime)-dt(a.startDate,a.startTime));const mk=monthKey();const total=bs.reduce((s,b)=>s+priceBreakdown(b).total,0);const monthTotal=bs.filter(b=>b.startDate.slice(0,7)===mk).reduce((s,b)=>s+priceBreakdown(b).total,0);const counts={};bs.forEach(b=>b.equipmentIds.forEach(eid=>{const name=eq(eid)?.name||equipmentName(eid);counts[name]=(counts[name]||0)+1}));const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+    document.getElementById('customerHistoryTitle').textContent=`${c.name} 거래내역`;document.getElementById('customerHistoryBody').innerHTML=`<div class="stats" style="grid-template-columns:repeat(4,1fr)"><div class="stat"><div class="label">전체 거래</div><div class="value">${bs.length}</div></div><div class="stat"><div class="label">전체 매출</div><div class="value" style="font-size:18px">${fmt(total)}</div></div><div class="stat"><div class="label">이번달 매출</div><div class="value" style="font-size:18px">${fmt(monthTotal)}</div></div><div class="stat"><div class="label">최다 대여 장비</div><div class="value" style="font-size:15px">${top?esc(top[0])+' · '+top[1]+'회':'-'}</div></div></div>${simpleBookingDetailTable(bs)}`;openModal('customerHistoryModal');
+  };
+  function simpleBookingDetailTable(list){return list.length?`<div class="data-wrap"><table><thead><tr><th>일정</th><th>장비</th><th>금액</th><th>상태</th></tr></thead><tbody>${list.map(b=>`<tr><td>${b.startDate} ${b.startTime}<br>~ ${b.endDate} ${b.endTime}</td><td>${b.equipmentIds.map(equipmentName).join('<br>')}</td><td class="num">${fmt(priceBreakdown(b).total)}</td><td>${badge(effectiveBookingStatus(b))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">거래내역이 없습니다</div>'}
+
+  window.renderDashboard=function(){
+    const now=new Date(),mk=monthKey(now);const total=state.equipment.length;const rented=state.equipment.filter(e=>upcoming(e.id).some(b=>effectiveBookingStatus(b)==='active'||effectiveBookingStatus(b)==='overdue')).length;const repair=state.equipment.filter(e=>e.status!=='available').length;const active=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b))).length;const scheduled=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=now).length;const monthBookings=state.bookings.filter(b=>b.status!=='cancelled'&&b.startDate.slice(0,7)===mk);const monthTotal=monthBookings.reduce((s,b)=>s+priceBreakdown(b).total,0);const monthUnpaid=monthBookings.filter(b=>b.payment!=='paid').reduce((s,b)=>s+priceBreakdown(b).total,0);
+    document.getElementById('dashStats').innerHTML=`<div class="stat"><div class="label">전체 장비</div><div class="value">${total}</div><div class="sub">대여중 ${rented} · 수리/분실 ${repair}</div></div><div class="stat"><div class="label">진행 중</div><div class="value">${active}</div><div class="sub">대여/연체</div></div><div class="stat"><div class="label">예정 대여</div><div class="value">${scheduled}</div><div class="sub">앞으로 출고</div></div><div class="stat"><div class="label">이번달 예약총액</div><div class="value" style="font-size:18px">${fmt(monthTotal)}</div><div class="sub">${mk} 출고 기준</div></div><div class="stat"><div class="label">이번달 미수</div><div class="value" style="font-size:18px;color:#fbbf24">${fmt(monthUnpaid)}</div><div class="sub">미입금/부분입금</div></div>`;
+    const act=state.bookings.filter(b=>['active','overdue'].includes(effectiveBookingStatus(b)));document.getElementById('activeRentals').innerHTML=simpleBookingTable(act);const upcomingList=state.bookings.filter(b=>b.status==='reserved'&&dt(b.startDate,b.startTime)>=now).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime)).slice(0,10);document.getElementById('upcomingRentals').innerHTML=simpleBookingTable(upcomingList);const due=state.bookings.filter(b=>effectiveBookingStatus(b)==='overdue'||(b.status==='active'&&(b.endDate===today()||isTomorrowDate(b.endDate))));document.getElementById('dueRentals').innerHTML=simpleBookingTable(due);
+  };
+  window.openStatsModal=function(){const s=document.getElementById('statsStart'),e=document.getElementById('statsEnd');if(!s.value){const d=new Date();s.value=d.toISOString().slice(0,7)+'-01'}if(!e.value)e.value=today();renderStatsModal();openModal('statsModal')};
+  window.renderStatsModal=function(){const s=val('statsStart'),e=val('statsEnd');const list=state.bookings.filter(b=>b.status!=='cancelled'&&b.startDate>=s&&b.startDate<=e).sort((a,b)=>dt(a.startDate,a.startTime)-dt(b.startDate,b.startTime));const total=list.reduce((x,b)=>x+priceBreakdown(b).total,0);const unpaid=list.filter(b=>b.payment!=='paid').reduce((x,b)=>x+priceBreakdown(b).total,0);const byCust={};list.forEach(b=>{const n=customerName(b.customerId);byCust[n]=(byCust[n]||0)+priceBreakdown(b).total});const top=Object.entries(byCust).sort((a,b)=>b[1]-a[1]);document.getElementById('statsContent').innerHTML=`<div class="stats" style="grid-template-columns:repeat(4,1fr)"><div class="stat"><div class="label">예약건수</div><div class="value">${list.length}</div></div><div class="stat"><div class="label">기간 매출</div><div class="value" style="font-size:18px">${fmt(total)}</div></div><div class="stat"><div class="label">미수</div><div class="value" style="font-size:18px;color:#fbbf24">${fmt(unpaid)}</div></div><div class="stat"><div class="label">최고 고객</div><div class="value" style="font-size:15px">${top[0]?esc(top[0][0])+'<br>'+fmt(top[0][1]):'-'}</div></div></div><div class="grid2"><div class="card"><h4>고객별 매출</h4>${top.length?`<div class="data-wrap"><table class="stat-modal-table"><thead><tr><th>고객</th><th>금액</th></tr></thead><tbody>${top.map(([n,v])=>`<tr><td>${esc(n)}</td><td class="num">${fmt(v)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">없음</div>'}</div><div class="card"><h4>예약 상세</h4>${simpleBookingDetailTable(list)}</div></div>`};
+
+  window.renderQuote=function(){const id=val('quoteBooking');const b=state.bookings.find(x=>x.id===id);if(!b)return document.getElementById('quoteContent').innerHTML='<div class="empty">예약을 선택하세요</div>';const c=cust(b.customerId)||{};const p=priceBreakdown(b);const accRows=accessoryRowsHTML(b.accessories);document.getElementById('quoteContent').innerHTML=`<div class="quote-doc"><div class="quote-title">임대차 계약서</div><table style="margin-bottom:12px"><tr><th>공급자</th><td>필름에이치케이 / 대표 민현기 / 415-32-00727</td><th>연락처</th><td>0507-1355-4807</td></tr><tr><th>임차인</th><td>${esc(c.name||'')}</td><th>연락처</th><td>${esc(c.phone||'')}</td></tr><tr><th>대여기간</th><td colspan="3">${b.startDate} ${b.startTime} ~ ${b.endDate} ${b.endTime} (${p.days}일)</td></tr></table><table><thead><tr><th>No.</th><th>구분</th><th>품목</th><th>수량</th><th>기간</th><th>단가</th><th>합산금액</th><th>비고</th></tr></thead><tbody>${b.equipmentIds.map((id,i)=>{const e=eq(id)||{};return `<tr><td>${i+1}</td><td>${esc(e.category||'')}</td><td>${esc(e.name||'')}<br><small>${esc(e.serial||'')}</small></td><td>1</td><td>${p.days}일</td><td class="num">${fmt(e.rate||0)}</td><td class="num">${fmt((e.rate||0)*p.days)}</td><td>${esc(e.note||'')}</td></tr>`}).join('')}${accRows}<tr><td colspan="6">합계</td><td class="num">${fmt(p.base)}</td><td></td></tr><tr><td colspan="6">회차할인 ${p.contPct}%</td><td class="num">- ${fmt(p.cont)}</td><td></td></tr>${p.studentPct?`<tr><td colspan="6">학생/독립영화 할인 ${p.studentPct}%</td><td class="num">- ${fmt(p.student)}</td><td></td></tr>`:''}${p.kongjuPct?`<tr><td colspan="6">공주대 할인 ${p.kongjuPct}%</td><td class="num">- ${fmt(p.kongju)}</td><td></td></tr>`:''}${p.manual?`<tr><td colspan="6">추가할인</td><td class="num">- ${fmt(p.manual)}</td><td></td></tr>`:''}${b.vat?`<tr class="fhk-v236-vat-supply-row"><td colspan="6">공급가</td><td class="num">${fmt(Math.max(0,p.total-p.vat))}</td><td></td></tr><tr class="fhk-v236-vat-tax-row"><td colspan="6">VAT 세액</td><td class="num">${fmt(p.vat)}</td><td></td></tr>`:''}<tr><th colspan="6">${b.vat?'총계 (VAT 포함)':'총계'}</th><th class="num">${fmt(p.total)}</th><th></th></tr></tbody></table><p style="font-size:12px;margin-top:14px;line-height:1.7">※ 반납일자와 시간을 준수해 주세요. 연장 시 사전 문의가 필요합니다.<br>※ 장비 손상/분실 시 수리비 또는 대체 구입 비용이 청구될 수 있습니다.</p></div>`};
+  window.copyQuoteText=function(){const id=val('quoteBooking'),b=state.bookings.find(x=>x.id===id);if(!b)return;const p=priceBreakdown(b);const items=b.equipmentIds.map(id=>{const e=eq(id)||{};return `- ${e.name||''}${e.serial?' ('+e.serial+')':''}: ${fmt(e.rate||0)} × ${p.days}일 = ${fmt((e.rate||0)*p.days)}`}).join('\n');const discounts=[`회차할인 ${p.contPct}%: -${fmt(p.cont)}`];if(p.studentPct)discounts.push(`학생/독립영화 할인 ${p.studentPct}%: -${fmt(p.student)}`);if(p.kongjuPct)discounts.push(`공주대 할인 ${p.kongjuPct}%: -${fmt(p.kongju)}`);if(p.manual)discounts.push(`추가할인: -${fmt(p.manual)}`);if(p.vat)discounts.push(`VAT: ${fmt(p.vat)}`);navigator.clipboard.writeText(`[FILM HK RENTAL 견적]\n고객: ${customerName(b.customerId)}\n기간: ${b.startDate} ${b.startTime} ~ ${b.endDate} ${b.endTime} (${rentalDurationText(b.startDate,b.startTime,b.endDate,b.endTime)})\n\n장비별 금액:\n${items}${accessoryText(b.accessories)}\n\n할인/정산:\n- ${discounts.join('\n- ')}\n\n총계: ${fmt(p.total)}`);alert('복사되었습니다')};
+
+  window.__settingsDraft=null;
+  function setSettingsDraft(){window.__settingsDraft=clone(state.settings); if(!Array.isArray(window.__settingsDraft.accessoryItems))window.__settingsDraft.accessoryItems=[...DEFAULT_ACCESSORY_ITEMS];}
+  window.renderSettings=function(){if(!window.__settingsDraft)setSettingsDraft();const d=window.__settingsDraft;document.getElementById('settings').innerHTML=`<div class="panel-header"><h2>할인/설정</h2></div><div class="grid2"><div class="card"><h3>회차 할인표</h3><p class="meta" style="margin-bottom:10px">수정 후 아래 SAVE 버튼을 눌러야 저장됩니다.</p><div id="discountEditor">${(d.discountRules||[]).sort((a,b)=>a.days-b.days).map((r,i)=>`<div class="form-row"><label>${r.days}일 이상</label><div style="display:flex;gap:6px"><input type="number" value="${r.pct}" data-discount-idx="${i}"><span class="meta" style="align-self:center">%</span><button class="btn btn-danger btn-sm" onclick="removeDiscountRuleDraft(${i})">삭제</button></div></div>`).join('')}</div><button class="btn btn-secondary btn-sm" onclick="addDiscountRule()">+ 할인구간 추가</button></div><div class="card"><h3>기본 할인</h3><div class="form-row"><label>학생/독립영화</label><input id="studentPct" type="number" min="0" max="100" value="${d.studentPct??20}"></div><div class="form-row"><label>공주대 할인</label><input id="kongjuPct" type="number" min="0" max="100" value="${d.kongjuPct??15}"></div><div class="form-row"><label>부가세</label><input id="vatPct" type="number" min="0" max="20" value="${d.vatPct??10}"></div><button class="btn btn-secondary" onclick="resetData()">초기 데이터 복구</button></div></div><div class="card" style="margin-top:16px"><h3>세부 구성품 항목</h3><p class="meta" style="margin-bottom:10px">예약 등록창과 견적서에 표시되는 수량 확인용 항목입니다. 가격은 0원으로 처리됩니다.</p><div id="accessoryEditor">${(d.accessoryItems||[]).map((name,i)=>`<div class="form-row"><label>항목 ${i+1}</label><div style="display:flex;gap:6px"><input value="${esc(name)}" data-accessory-idx="${i}"><button class="btn btn-danger btn-sm" onclick="removeAccessoryDraft(${i})">삭제</button></div></div>`).join('')}</div><div style="display:flex;gap:8px"><input id="newAccessoryName" placeholder="새 구성품명" style="flex:1"><button class="btn btn-secondary btn-sm" onclick="addAccessoryDraft()">+ 구성품 추가</button></div></div><div class="card" style="margin-top:16px" id="v199AccCard"><h3>부속품 체크 그룹 <small style="font-size:11px;color:#9ca3af;font-weight:400">— 견적서 \'부속품 체크\' 칸 자동 표시</small></h3><p class="meta" style="margin-bottom:12px">그룹마다 집계할 카테고리를 체크박스로 선택합니다. 장비관리에서 새 카테고리를 추가하면 여기서 바로 선택할 수 있습니다.</p><div id="v199AccGroupsEditor"><span style="color:#6b7280;font-size:12px">로딩 중...</span></div></div><div class="settings-savebar"><div class="meta">변경사항은 SAVE 버튼을 눌러야 브라우저에 저장됩니다.</div><div><button class="btn btn-secondary" onclick="discardSettingsDraft()">되돌리기</button> <button class="btn btn-primary" onclick="saveSettings()">SAVE</button></div></div>`};
+  window.addDiscountRule=function(){if(!window.__settingsDraft)setSettingsDraft();const d=Number(prompt('몇 일 이상?'));if(!d)return;const p=Number(prompt('할인율 %'))||0;window.__settingsDraft.discountRules.push({days:d,pct:p});renderSettings()};
+  window.removeDiscountRuleDraft=function(i){if(!window.__settingsDraft)setSettingsDraft();window.__settingsDraft.discountRules.splice(i,1);renderSettings()};
+  window.addAccessoryDraft=function(){if(!window.__settingsDraft)setSettingsDraft();const v=val('newAccessoryName').trim();if(!v)return alert('구성품명을 입력하세요');window.__settingsDraft.accessoryItems.push(v);renderSettings()};
+  window.removeAccessoryDraft=function(i){if(!window.__settingsDraft)setSettingsDraft();window.__settingsDraft.accessoryItems.splice(i,1);renderSettings()};
+  window.discardSettingsDraft=function(){setSettingsDraft();renderSettings()};
   window.saveSettings=function(){if(!window.__settingsDraft)setSettingsDraft();const d=window.__settingsDraft;d.studentPct=Number(val('studentPct'))||0;d.kongjuPct=Number(val('kongjuPct'))||0;d.vatPct=Number(val('vatPct'))||0;document.querySelectorAll('[data-discount-idx]').forEach(input=>{const i=Number(input.dataset.discountIdx); if(d.discountRules[i])d.discountRules[i].pct=Number(input.value)||0});document.querySelectorAll('[data-accessory-idx]').forEach(input=>{const i=Number(input.dataset.accessoryIdx); if(d.accessoryItems[i])d.accessoryItems[i]=input.value.trim()||d.accessoryItems[i]});d.discountRules=d.discountRules.filter(r=>Number(r.days)>0).sort((a,b)=>a.days-b.days);d.accessoryItems=[...new Set((d.accessoryItems||[]).map(x=>String(x).trim()).filter(Boolean))];state.settings=d;window.__settingsDraft=null;save();renderSettings();alert('저장되었습니다')};
 
   const oldRenderQuotes=window.renderQuotes||renderQuotes;
