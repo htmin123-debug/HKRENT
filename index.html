@@ -3296,8 +3296,38 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
     const b = (S().bookings||[]).find(x=>x.id===id);
     const target=$('quoteContent');
     if(!target) return;
-    if(!b){target.innerHTML='<div class="empty">예약을 선택하세요</div>'; return;}
+    if(!b){target.innerHTML='<div class="empty">예약을 선택하세요</div>'; window.__fhkQuoteRenderedBookingId=''; return;}
     target.innerHTML = buildQuoteHTML(b);
+    // [버그수정] 방금 실제로 화면에 그려진 예약 id를 기록해둔다.
+    // 이후 fixQuoteAccessoryCheck 같은 후처리가 select 값을 다시 읽다가
+    // (그 사이 다른 곳에서 select가 바뀌면) 엉뚱한 예약의 부속품을 덮어쓰는 것을 방지한다.
+    window.__fhkQuoteRenderedBookingId = b.id;
+    // [버그수정] 위쪽 예약 선택 탭(select)도 같은 예약을 계속 가리키도록 몇 차례 재확인한다.
+    // (월 필터 재구성 등으로 select 가 나중에 다른 값으로 바뀌면, "예약 수정" 버튼이
+    // 화면에 보이는 것과 다른 예약을 열게 되므로 탭 표시도 함께 지켜야 한다.)
+    const keepTabInSync = ()=>{
+      try{
+        const bid = window.__fhkQuoteRenderedBookingId;
+        if(!bid) return;
+        const sel = $('quoteBooking');
+        if(!sel || sel.value === bid) return;
+        let opt = [...sel.options].find(o=>o.value===bid);
+        if(!opt){
+          const cb = (S().bookings||[]).find(x=>x.id===bid);
+          if(!cb) return;
+          opt = document.createElement('option');
+          opt.value = bid;
+          // [버그수정] 다른 예약들과 같은 형식(예약번호 · 고객 · 상태 · 결제 · 기간)으로 표시.
+          // 이전에는 여기서만 "날짜 고객명 / 개수" 같은 구식 표기가 남아있었다.
+          opt.textContent = (typeof window.bookingOptionText==='function')
+            ? window.bookingOptionText(cb)
+            : `${cb.startDate} ${typeof customerName==='function'?customerName(cb.customerId):''} / ${(cb.equipmentIds||[]).length}개`;
+          sel.appendChild(opt);
+        }
+        sel.value = bid;
+      }catch(_){}
+    };
+    [0,150,400,900].forEach(t=>setTimeout(keepTabInSync,t));
   };
 
   const prevRenderQuotes = window.renderQuotes;
@@ -3554,7 +3584,12 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       const b=findBooking(id);
       const opt=document.createElement('option');
       opt.value=id;
-      opt.textContent=b?`${b.startDate} ${typeof customerName==='function'?customerName(b.customerId):''} / ${(b.equipmentIds||[]).length}개`:'선택된 예약';
+      // [버그수정] 다른 예약 옵션들과 같은 형식(예약번호 · 고객 · 상태 · 결제 · 기간)으로 표시.
+      opt.textContent = b
+        ? ((typeof window.bookingOptionText==='function')
+            ? window.bookingOptionText(b)
+            : `${b.startDate} ${typeof customerName==='function'?customerName(b.customerId):''} / ${(b.equipmentIds||[]).length}개`)
+        : '선택된 예약';
       sel.appendChild(opt);
     }
     sel.value=id;
@@ -12877,7 +12912,13 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function _fixAccCheckCell(){
     var qc=$('quoteContent'); if(!qc) return;
-    var b=(S().bookings||[]).find(function(x){return x.id===($('quoteBooking')||{}).value;}); if(!b) return;
+    // [버그수정] select 를 독립적으로 다시 읽으면 그 사이 다른 곳에서 select 가 바뀌었을 때
+    // 화면에 보이는 예약과 다른 예약의 부속품이 표시된다. 실제로 방금 렌더된 예약을 우선 사용한다.
+    var renderedId = window.__fhkQuoteRenderedBookingId;
+    var b = renderedId
+      ? (S().bookings||[]).find(function(x){return x.id===renderedId;})
+      : (S().bookings||[]).find(function(x){return x.id===($('quoteBooking')||{}).value;});
+    if(!b) return;
     var txt=_buildAccCheckText(b);
     var td=qc.querySelector('td.fhk-check'); if(!td) return;
     if(txt) td.innerHTML=txt.replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];}).replace(/\n/g,'<br>');
@@ -14275,7 +14316,13 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function fixQuoteAccessories(){
     const qc=$('quoteContent'); if(!qc)return;
-    const b=(S().bookings||[]).find(x=>x.id===($('quoteBooking')||{}).value); if(!b)return;
+    // [버그수정] select 를 독립적으로 다시 읽으면 그 사이 다른 곳에서 select 가 바뀌었을 때
+    // 화면에 보이는 예약과 다른 예약의 부속품이 표시된다. 실제로 방금 렌더된 예약을 우선 사용한다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    const b = renderedId
+      ? (S().bookings||[]).find(x=>x.id===renderedId)
+      : (S().bookings||[]).find(x=>x.id===($('quoteBooking')||{}).value);
+    if(!b)return;
 
     // 메인 품목 테이블에서 세부 구성품 행 제거
     qc.querySelectorAll('table tbody tr').forEach(tr=>{
@@ -14692,7 +14739,13 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function fixQuoteAccessories(){
     const qc=$('quoteContent'); if(!qc)return;
-    const b=(S().bookings||[]).find(x=>x.id===($('quoteBooking')||{}).value); if(!b)return;
+    // [버그수정] select 를 독립적으로 다시 읽으면 그 사이 다른 곳에서 select 가 바뀌었을 때
+    // 화면에 보이는 예약과 다른 예약의 부속품이 표시된다. 실제로 방금 렌더된 예약을 우선 사용한다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    const b = renderedId
+      ? (S().bookings||[]).find(x=>x.id===renderedId)
+      : (S().bookings||[]).find(x=>x.id===($('quoteBooking')||{}).value);
+    if(!b)return;
 
     // 메인 품목에서 세부 구성품 행은 제거
     qc.querySelectorAll('table tbody tr').forEach(tr=>{
@@ -14940,7 +14993,12 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function fixQuoteAccessoryCheck(){
     const qc=$('quoteContent'); if(!qc) return;
-    const b=getQuoteBooking(); if(!b) return;
+    // [버그수정] getQuoteBooking() 은 select 를 독립적으로 다시 읽는다. 그 사이 다른 곳에서
+    // select 가 바뀌면 화면에 보이는 예약과 다른 예약의 부속품이 표시된다.
+    // 실제로 방금 렌더된 예약을 우선 사용한다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    const b = renderedId ? (S().bookings||[]).find(x=>x.id===renderedId) : getQuoteBooking();
+    if(!b) return;
     removeAccessoryItemRows(qc,b);
     ensureAccessoryCheckRow(qc,b);
   }
@@ -15407,7 +15465,12 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
 
   function fixQuoteAccessoryCheck(){
     const qc=$('quoteContent'); if(!qc) return;
-    const b=getQuoteBooking(); if(!b) return;
+    // [버그수정] select 값을 독립적으로 다시 읽으면, 그 사이 다른 곳(월 필터 재적용,
+    // 클라우드 재렌더 등)에서 select가 바뀌었을 때 화면에 보이는 예약과 다른
+    // 예약의 부속품이 표시되는 문제가 있었다. 실제로 방금 렌더된 예약을 우선 사용한다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    const b = renderedId ? (S().bookings||[]).find(x=>x.id===renderedId) : getQuoteBooking();
+    if(!b) return;
     removeAccessoryRows(qc,b);
     ensureAccessoryCheckCell(qc,b);
   }
@@ -16115,6 +16178,10 @@ else{bump();injectGroupCard();}
   const $=id=>document.getElementById(id);
 
   function currentQuoteBookingId(){
+    // [버그수정] select 값이 실제 화면에 그려진 예약과 다를 수 있다(월 필터 재적용 등으로).
+    // "예약 수정" 버튼은 반드시 실제로 화면에 보이는 견적의 예약을 열어야 한다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    if(renderedId) return renderedId;
     return $('quoteBooking')?.value || '';
   }
 
@@ -17578,6 +17645,8 @@ else{bump();injectGroupCard();}
     const period=[b.startDate,b.endDate].filter(Boolean).join('~');
     return `${no} · ${name} · ${statusLabel(b.status)} · ${paymentLabel(b.payment)}${period?' · '+period:''}`;
   }
+  // 다른 블록(견적 탭 재동기화 등)에서도 동일한 라벨 형식을 쓸 수 있도록 전역 노출
+  window.bookingOptionText = bookingOptionText;
 
   function allBookingsSorted(){
     const st=S();
@@ -18566,6 +18635,12 @@ else{bump();injectGroupCard();}
   function M(n){try{return fmt(Number(n)||0);}catch(_){try{return won(Number(n)||0);}catch(e){return (Number(n)||0).toLocaleString('ko-KR')+'원';}}}
 
   function currentQuoteBooking(){
+    // [버그수정] select 값이 실제 화면에 그려진 예약과 다를 수 있다. 실제 렌더된 예약을 최우선으로 쓴다.
+    const renderedId = window.__fhkQuoteRenderedBookingId;
+    if(renderedId){
+      const rb=(S().bookings||[]).find(x=>x.id===renderedId);
+      if(rb) return rb;
+    }
     const id=$('quoteBooking')?.value||'';
     if(id){
       const b=(S().bookings||[]).find(x=>x.id===id);
@@ -18715,7 +18790,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v250';
+  const DISPLAY_VERSION = 'v255';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -18911,15 +18986,14 @@ else{bump();injectGroupCard();}
 })();
 </script>
 
-<script id="fhk-v238-booking-return-sort-and-duplicate-script">
-/*
-  v238 — 예약/대여 관리 추가 기능 (정리 2단계)
-   (1) 반납완료 예약을 목록 맨 아래로 내림 (기본 정렬: 예약번호 순 유지, 반납 건만 하단)
-   (2) 각 예약 행에 "복제" 버튼 추가 → 같은 구성으로 날짜만 바꿔 새 예약 생성
-  ※ 이 블록 하나만 지우면 이 두 기능만 깔끔히 제거됩니다.
-  ※ 기존 renderBookings 를 건드리지 않고, 그려진 표를 사후 보정하는 방식(안전).
-*/
+<!-- [정리] v238+v240+v241+v242 물리적 병합. 로직/실행순서/타이밍은 완전히 동일하게 보존됨.
+     saveBooking 은 v238(복제차단→저장알림)→v240(자체촬영저장)→v242(구성품조정저장) 순으로 여전히 래핑.
+     showPanel 은 v240(_osp)→v241(_osp2) 순으로 여전히 래핑. 순수 유틸(N,S,$,H,saveNow) 중복만 제거. -->
+<script id="fhk-v238-v240-v241-v242-merged-script">
 (function(){
+
+  /* ===== [v238] 예약 정렬·복제 ===== */
+
   if(window.__fhkV238BookingExtras) return;
   window.__fhkV238BookingExtras = true;
 
@@ -19262,30 +19336,14 @@ else{bump();injectGroupCard();}
   }
   // 최초 부팅 보정
   [800, 1600, 2600].forEach(t=>setTimeout(applyBoth,t));
-})();
-</script>
 
-<script id="fhk-v240-internal-shoot-script">
-/*
-  v240 — 자체 촬영(내부 대여) 표시 + 촬영명
-   · 예약 모달에 "자체 촬영(매출 제외)" 체크박스와 "촬영명" 입력칸을 추가한다.
-   · 자체 촬영으로 표시한 예약은 견적서 금액은 그대로 보이되,
-     대시보드/통계의 매출·미수 합계에서 제외된다(추가할인 0원 우회 불필요).
-   · 촬영명을 입력하면 예약 목록·견적 선택 등에 "FILM HK (홍대 스케치)"처럼 표시된다.
-  ※ 이 블록만 지우면 기능이 깔끔히 제거된다. 데이터(internal, projectName)는 남지만 무해.
-*/
-(function(){
+  /* ===== [v240] 자체촬영·촬영명 ===== */
+
   if(window.__fhkV240InternalShoot) return;
   window.__fhkV240InternalShoot = true;
 
   const $ = id => document.getElementById(id);
-  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
-  const N = v => String(v??'').replace(/\s+/g,' ').trim();
   const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const saveNow = () => {
-    try{ if(typeof save==='function') return save(); }catch(_){}
-    try{ localStorage.setItem('filmhk_rental_v2', JSON.stringify(S())); }catch(_){}
-  };
   const findBooking = id => (S().bookings||[]).find(b=>b&&b.id===id) || null;
   const isInternal = b => !!(b && b.internal);
 
@@ -19535,24 +19593,12 @@ else{bump();injectGroupCard();}
     try{ showPanel=window.showPanel; }catch(_){}
   }
   [1000,2000].forEach(t=>setTimeout(decorateBookingRows,t));
-})();
-</script>
 
-<script id="fhk-v241-unpaid-modal-script">
-/*
-  v241 — 대시보드 '이번달 미수금' 클릭 → 미수 예약 목록 모달
-   · 미수금 stat 카드를 클릭하면 이번달(대여일 기준) 미수 예약 목록이 모달로 뜬다.
-   · 예약번호·고객명 클릭 가능(예약 상세 / 고객 이력), 금액·입금상태 표시.
-   · 자체촬영(매출 제외) 예약은 미수에서도 제외.
-  ※ 이 블록만 지우면 기능이 제거된다.
-*/
-(function(){
+  /* ===== [v241] 미수금 모달 ===== */
+
   if(window.__fhkV241UnpaidModal) return;
   window.__fhkV241UnpaidModal = true;
 
-  const $ = id => document.getElementById(id);
-  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
-  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   function money(n){ try{ if(typeof fmt==='function') return fmt(n); if(typeof won==='function') return won(n); }catch(_){} return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
   function priceOf(b){ try{ return priceBreakdown(b); }catch(_){ return {total:0,grossTotal:0}; } }
   function custName(id){ try{ if(typeof customerName==='function') return customerName(id); }catch(_){} const c=(S().customers||[]).find(x=>x.id===id); return c?c.name:''; }
@@ -19651,31 +19697,18 @@ else{bump();injectGroupCard();}
       try{ new MutationObserver(()=>setTimeout(makeUnpaidClickable,0)).observe(ds,{childList:true,subtree:true}); }catch(_){}
     }
   })();
-  const _osp = window.showPanel;
-  if(typeof _osp==='function'){
-    window.showPanel = function(id){ const r=_osp.apply(this,arguments); if(id==='dashboard'){[60,300,800].forEach(t=>setTimeout(makeUnpaidClickable,t));} return r; };
+  const _osp2 = window.showPanel;
+  if(typeof _osp2==='function'){
+    window.showPanel = function(id){ const r=_osp2.apply(this,arguments); if(id==='dashboard'){[60,300,800].forEach(t=>setTimeout(makeUnpaidClickable,t));} return r; };
     try{ showPanel=window.showPanel; }catch(_){}
   }
   [1000,2200].forEach(t=>setTimeout(makeUnpaidClickable,t));
-})();
-</script>
 
-<script id="fhk-v242-basic-comp-adjust-script">
-/*
-  v242 — 예약 시 기본구성품 수량 조정 & 슬롯 제외
-   · 기본구성품 선택 모달의 각 슬롯 카드에:
-       (a) "이 예약 수량" 입력 — 기본 필요수량을 이 예약에서만 늘리거나 줄임 (예: 배터리 4개)
-       (b) "이 예약에서 제외" 체크 — 해당 구성품을 빼고 '부족' 경고도 끔 (예: 메모리 불필요)
-   · 조정/제외 값은 예약별로 저장되어, 부족 판정과 견적 비고에 반영된다.
-  ※ 이 블록만 지우면 기능이 제거된다. (조정 데이터는 남지만 무해)
-*/
-(function(){
+  /* ===== [v242] 기본구성품 조정 ===== */
+
   if(window.__fhkV242BasicAdjust) return;
   window.__fhkV242BasicAdjust = true;
 
-  const $ = id => document.getElementById(id);
-  const N = v => String(v??'').replace(/\s+/g,' ').trim();
-  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
   // 예약별 슬롯 조정 저장소: { [eqId]: { [slotName]: {qty:Number, excluded:Bool} } }
   window.__fhkBasicSlotAdjust = window.__fhkBasicSlotAdjust || {};
