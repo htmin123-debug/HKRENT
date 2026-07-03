@@ -18790,7 +18790,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v256';
+  const DISPLAY_VERSION = 'v261';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -19673,6 +19673,10 @@ else{bump();injectGroupCard();}
   function makeUnpaidClickable(){
     const ds = $('dashStats'); if(!ds) return;
     [...ds.querySelectorAll('.stat')].forEach(card=>{
+      // [버그수정] v244 가 이미 자체적으로 클릭을 바인딩하는 카드(이번달 미수금/전체 누적 미수금)는
+      // 건너뛴다. 안 그러면 같은 카드에 두 개의 클릭 핸들러가 겹쳐 붙어 모달이 두 개 뜬다
+      // (이번달 모달을 닫아야 전체 누적 모달이 보이는 증상의 원인이었음).
+      if(card.id==='fhkV244UnpaidThisMonth' || card.id==='fhkV244UnpaidTotal') return;
       const label = card.querySelector('.label');
       if(!label) return;
       const txt = (label.textContent||'').replace(/\s+/g,'');
@@ -20195,6 +20199,884 @@ else{bump();injectGroupCard();}
   // 즉시 적용 헬퍼 (중복 진입 방지)
   function setupNow(){ if(window.__fhkV243Setup) return; window.__fhkV243Setup=true; try{ setup(); }finally{ window.__fhkV243Setup=false; } setTimeout(setup, 120); }
   setupNow();
+})();
+</script>
+
+<script id="fhk-v244-dashboard-redesign-script">
+/*
+  v244 — 대시보드 재설계
+   (1) 통계 카드를 매출/운영/미수금 3개 구역으로 재배치
+   (2) 최근 6개월 매출 추이 미니 막대차트 (순수 SVG, 외부 라이브러리 없음)
+   (3) 미수금: 이번달뿐 아니라 전체 누적 미수금 + 연체 기간별(7일 이내/7~30일/30일 이상) 표시
+  ※ 이 블록만 지우면 기존 대시보드(v12/v241)로 돌아간다.
+*/
+(function(){
+  if(window.__fhkV244Dashboard) return;
+  window.__fhkV244Dashboard = true;
+
+  const $ = id => document.getElementById(id);
+  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
+  const money = n => { try{ if(typeof fmt==='function') return fmt(n); }catch(_){} return (Number(n)||0).toLocaleString('ko-KR')+'원'; };
+  const shortMoney = n => {
+    const v = Number(n)||0;
+    if(v>=100000000) return (v/100000000).toFixed(v%100000000===0?0:1)+'억';
+    if(v>=10000) return Math.round(v/10000)+'만';
+    return v.toLocaleString('ko-KR');
+  };
+  const priceOf = b => { try{ return priceBreakdown(b); }catch(_){ return {total:0}; } };
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+  function ym(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  function monthLabel(ymStr){ return Number(ymStr.split('-')[1])+'월'; }
+  function monthRangeOf(ymStr){
+    const [y,m]=ymStr.split('-').map(Number);
+    const s=`${y}-${String(m).padStart(2,'0')}-01`;
+    const last=new Date(y,m,0).getDate();
+    const e=`${y}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+    return {s,e};
+  }
+
+  /* 최근 N개월(이번달 포함) 매출 시리즈: 대여일(시작일) 기준, 취소 제외, 자체촬영은 priceBreakdown 이 자동 0원 처리 */
+  function monthlyRevenueSeries(n){
+    const now = new Date();
+    const months = [];
+    for(let i=n-1;i>=0;i--){
+      months.push(ym(new Date(now.getFullYear(), now.getMonth()-i, 1)));
+    }
+    const bookings = (S().bookings||[]).filter(b=>b && b.status!=='cancelled');
+    return months.map(m=>{
+      const r = monthRangeOf(m);
+      const total = bookings.filter(b=>b.startDate>=r.s && b.startDate<=r.e)
+                             .reduce((s,b)=>s+(priceOf(b).total||0),0);
+      return {ym:m, label:monthLabel(m), total};
+    });
+  }
+
+  /* 전체 누적 미수금(모든 달) + 연체 기간별(대여 시작일 기준 경과일수) 버킷 */
+  function unpaidOverview(){
+    const bookings = (S().bookings||[]).filter(b=>b && b.status!=='cancelled' && b.payment!=='paid');
+    const today = new Date(); today.setHours(0,0,0,0);
+    const buckets = { within7:{count:0,amount:0}, d7to30:{count:0,amount:0}, over30:{count:0,amount:0} };
+    let totalAmount = 0, totalCount = 0;
+    bookings.forEach(b=>{
+      const amt = priceOf(b).total || 0;
+      if(amt<=0) return; // 자체촬영 등 매출제외 예약은 미수 집계에서도 제외
+      totalAmount += amt; totalCount++;
+      let days = 0;
+      try{
+        const sd = new Date(b.startDate+'T00:00:00');
+        days = Math.floor((today - sd) / 86400000);
+      }catch(_){}
+      if(days < 7) buckets.within7.count++, buckets.within7.amount+=amt;
+      else if(days <= 30) buckets.d7to30.count++, buckets.d7to30.amount+=amt;
+      else buckets.over30.count++, buckets.over30.amount+=amt;
+    });
+    return {totalAmount, totalCount, buckets};
+  }
+
+  /* 간단한 SVG 막대차트: 최근 N개월 매출, 반응형(viewBox), 외부 라이브러리 없음 */
+  function buildRevenueChartSVG(series){
+    // 가로로 넓고 얇은 비율로 바꿔서, 카드 폭에 맞춰 늘어나도 세로로 과하게 커지지 않게 한다.
+    const W=760, CH=140, padL=6, padR=6, padT=18, padB=24;
+    const max = Math.max(1, ...series.map(x=>x.total));
+    const n = series.length;
+    const gap = n>8 ? 6 : 12;
+    const barW = (W-padL-padR-gap*(n-1))/n;
+    const showValueLabels = n<=6;
+    const plotH = CH-padT-padB;
+    // 은은한 가로 기준선 2개(중간/상단)
+    const gridLines = [0.5, 1].map(f=>{
+      const gy = padT + plotH*(1-f);
+      return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="#2a2d35" stroke-width="1" stroke-dasharray="3,4"/>`;
+    }).join('');
+    const bars = series.map((x,i)=>{
+      const h = Math.max(2, (x.total/max) * plotH);
+      const bx = padL + i*(barW+gap);
+      const by = CH-padB-h;
+      const isLast = i===n-1;
+      const fill = isLast ? 'url(#fhkV244BarGradCur)' : 'url(#fhkV244BarGrad)';
+      const valueLabel = (showValueLabels && x.total>0) ? shortMoney(x.total) : '';
+      return `<g>
+        <rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(6,barW/3).toFixed(1)}" fill="${fill}"><title>${H(x.label)}: ${H(money(x.total))}</title></rect>
+        ${valueLabel?`<text x="${(bx+barW/2).toFixed(1)}" y="${(by-6).toFixed(1)}" font-size="11" fill="#a3adc2" text-anchor="middle" font-weight="600">${H(valueLabel)}</text>`:''}
+        <text x="${(bx+barW/2).toFixed(1)}" y="${CH-7}" font-size="11" fill="#6b7280" text-anchor="middle">${H(x.label)}</text>
+      </g>`;
+    }).join('');
+    const defs = `<defs>
+      <linearGradient id="fhkV244BarGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4c6ea8"/><stop offset="100%" stop-color="#324566"/>
+      </linearGradient>
+      <linearGradient id="fhkV244BarGradCur" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#7cb3ff"/><stop offset="100%" stop-color="#4a8ce8"/>
+      </linearGradient>
+    </defs>`;
+    return `<svg viewBox="0 0 ${W} ${CH}" style="width:100%;height:auto;max-height:150px;display:block" preserveAspectRatio="xMidYMid meet">${defs}${gridLines}${bars}</svg>`;
+  }
+
+  function momChangeHTML(series){
+    if(series.length<2) return '';
+    const cur = series[series.length-1].total;
+    const prev = series[series.length-2].total;
+    if(prev<=0){
+      return cur>0 ? '<span style="color:#34d399;font-size:12px">신규</span>' : '';
+    }
+    const pct = Math.round(((cur-prev)/prev)*1000)/10;
+    const up = pct>=0;
+    const color = up ? '#34d399' : '#f87171';
+    const arrow = up ? '▲' : '▼';
+    return `<span style="color:${color};font-size:13px;font-weight:700">${arrow} ${Math.abs(pct)}%</span> <span style="color:#6b7280;font-size:11px">전월 대비</span>`;
+  }
+
+  function renderStatsV244(){
+    const box = $('dashStats');
+    if(!box) return;
+    // [버그수정] #dashStats 자체가 CSS 로 5열 그리드(class="stats")를 물려받고 있어서,
+    // 내가 넣는 래퍼 div 하나가 그중 1칸(20%)만 차지해 왼쪽으로 쏠려 보였다.
+    // 내 레이아웃을 직접 제어하도록 display 를 명시적으로 덮어쓴다.
+    box.style.display = 'block';
+
+    const total = (S().equipment||[]).length;
+    const activeCount = (S().bookings||[]).filter(b=>{
+      try{ return ['active','overdue'].includes(effectiveBookingStatus(b)); }catch(_){ return false; }
+    }).length;
+    const scheduledCount = (S().bookings||[]).filter(b=>{
+      try{ return b.status==='reserved' && dt(b.startDate,b.startTime)>=new Date(); }catch(_){ return false; }
+    }).length;
+
+    const unpaid = unpaidOverview();
+
+    // 대시보드는 운영 현황 + 미수금 위주로 간결하게. 매출 상세(추이 차트 등)는 "예약 통계"에서 확인.
+    box.innerHTML = `
+      <div class="fhk-v244-groups" style="display:flex;flex-direction:column;gap:14px;width:100%">
+
+        <div class="fhk-v244-group" style="width:100%">
+          <div class="fhk-v244-group-title">운영</div>
+          <div class="stats" style="grid-template-columns:repeat(3,1fr);width:100%">
+            <div class="stat"><div class="label">전체 장비</div><div class="value">${total}</div><div class="sub">등록 장비</div></div>
+            <div class="stat"><div class="label">진행 중</div><div class="value">${activeCount}</div><div class="sub">대여/연체</div></div>
+            <div class="stat"><div class="label">예정 대여</div><div class="value">${scheduledCount}</div><div class="sub">앞으로 출고</div></div>
+          </div>
+        </div>
+
+        <div class="fhk-v244-group" style="width:100%">
+          <div class="fhk-v244-group-title">미수금</div>
+          <div class="stats" style="grid-template-columns:repeat(2,1fr);width:100%">
+            <div class="stat" id="fhkV244UnpaidThisMonth" style="cursor:pointer" title="클릭하면 이번달 미수 예약 목록을 봅니다">
+              <div class="label">이번달 미수금</div>
+              <div class="value" style="font-size:18px;color:#fbbf24">${H(money((function(){
+                const r=monthRangeOf(ym(new Date()));
+                return (S().bookings||[]).filter(b=>b.status!=='cancelled' && b.payment!=='paid' && b.startDate>=r.s && b.startDate<=r.e)
+                  .reduce((s,b)=>s+(priceOf(b).total||0),0);
+              })()))}</div>
+              <div class="sub">미입금/부분입금 <span style="color:#60a5fa">▸ 클릭</span></div>
+            </div>
+            <div class="stat" id="fhkV244UnpaidTotal" style="cursor:pointer" title="클릭하면 전체 미수 예약 목록을 봅니다">
+              <div class="label">전체 누적 미수금</div>
+              <div class="value" style="font-size:18px;color:#f97316">${H(money(unpaid.totalAmount))}</div>
+              <div class="sub">${unpaid.totalCount}건 · <span style="color:#60a5fa">▸ 클릭</span></div>
+            </div>
+          </div>
+          <div class="fhk-v244-aging" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <span class="fhk-v244-age-badge" data-age="within7" style="cursor:pointer;background:rgba(250,204,21,.12);color:#facc15;border:1px solid rgba(250,204,21,.3);border-radius:999px;padding:4px 10px;font-size:12px">7일 이내 ${unpaid.buckets.within7.count}건 · ${H(shortMoney(unpaid.buckets.within7.amount))}원</span>
+            <span class="fhk-v244-age-badge" data-age="d7to30" style="cursor:pointer;background:rgba(251,146,60,.12);color:#fb923c;border:1px solid rgba(251,146,60,.3);border-radius:999px;padding:4px 10px;font-size:12px">7~30일 ${unpaid.buckets.d7to30.count}건 · ${H(shortMoney(unpaid.buckets.d7to30.amount))}원</span>
+            <span class="fhk-v244-age-badge" data-age="over30" style="cursor:pointer;background:rgba(248,113,113,.12);color:#f87171;border:1px solid rgba(248,113,113,.3);border-radius:999px;padding:4px 10px;font-size:12px">30일 이상 ${unpaid.buckets.over30.count}건 · ${H(shortMoney(unpaid.buckets.over30.amount))}원</span>
+          </div>
+        </div>
+
+      </div>`;
+
+    // 클릭 바인딩: 이번달 미수 -> 기존 v241 모달(이번달만), 전체 누적/연체구간 -> 전체 미수 모달(신규, ageFilter 지원)
+    const thisMonthCard = $('fhkV244UnpaidThisMonth');
+    if(thisMonthCard) thisMonthCard.addEventListener('click', ()=>{ if(typeof window.fhkOpenUnpaidModal==='function') window.fhkOpenUnpaidModal(); });
+    const totalCard = $('fhkV244UnpaidTotal');
+    if(totalCard) totalCard.addEventListener('click', ()=>openUnpaidAllModal());
+    box.querySelectorAll('.fhk-v244-age-badge').forEach(el=>{
+      el.addEventListener('click', ()=>openUnpaidAllModal(el.getAttribute('data-age')));
+    });
+  }
+
+  /* 전체 기간 미수 예약 모달 (연체 구간 필터 지원) — v241의 "이번달만" 모달과 별개 */
+  function ensureAllModal(){
+    if($('fhkV244UnpaidAllModal')) return;
+    document.body.insertAdjacentHTML('beforeend',
+      '<div class="modal-bg" id="fhkV244UnpaidAllModal"><div class="modal large"><div class="modal-header">'+
+      '<h3 id="fhkV244UnpaidAllTitle">전체 미수 예약</h3>'+
+      '<button class="close" onclick="closeModal(\'fhkV244UnpaidAllModal\')">×</button></div>'+
+      '<div class="modal-body" id="fhkV244UnpaidAllBody"></div></div></div>');
+  }
+  const AGE_LABEL = {within7:'7일 이내', d7to30:'7~30일', over30:'30일 이상'};
+  function openUnpaidAllModal(ageFilter){
+    ensureAllModal();
+    const today = new Date(); today.setHours(0,0,0,0);
+    let list = (S().bookings||[]).filter(b=>b && b.status!=='cancelled' && b.payment!=='paid');
+    list = list.map(b=>{
+      const amt = priceOf(b).total||0;
+      let days=0; try{ days=Math.floor((today-new Date(b.startDate+'T00:00:00'))/86400000); }catch(_){}
+      const age = days<7?'within7':(days<=30?'d7to30':'over30');
+      return {b, amt, days, age};
+    }).filter(x=>x.amt>0);
+    if(ageFilter) list = list.filter(x=>x.age===ageFilter);
+    list.sort((a,b)=>b.days-a.days);
+
+    const custName = id => { try{ return customerName(id); }catch(_){ const c=(S().customers||[]).find(x=>x.id===id); return c?c.name:''; } };
+    const rows = list.map(x=>{
+      const b=x.b;
+      const payLabel = b.payment==='partial'?'부분입금':'미입금';
+      return `<tr>
+        <td><b style="cursor:pointer;color:#60a5fa" onclick="closeModal('fhkV244UnpaidAllModal');if(typeof openBookingModal==='function')openBookingModal('${b.id}')">${H(b.bookingNo||'')}</b></td>
+        <td><b style="cursor:pointer;color:#60a5fa" onclick="closeModal('fhkV244UnpaidAllModal');if(typeof showCustomerHistory==='function')showCustomerHistory('${b.customerId}')">${H(custName(b.customerId))}</b></td>
+        <td>${H(b.startDate||'')} ~ ${H(b.endDate||'')}</td>
+        <td>${H(AGE_LABEL[x.age])} (${x.days}일)</td>
+        <td class="num">${H(money(x.amt))}</td>
+        <td><span style="color:#fbbf24">${H(payLabel)}</span></td>
+      </tr>`;
+    }).join('');
+    const totalAmt = list.reduce((s,x)=>s+x.amt,0);
+
+    $('fhkV244UnpaidAllTitle').textContent = ageFilter ? `전체 미수 예약 — ${AGE_LABEL[ageFilter]}` : '전체 미수 예약';
+    $('fhkV244UnpaidAllBody').innerHTML =
+      '<div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">'+
+        '<div class="stat"><div class="label">건수</div><div class="value">'+list.length+'</div></div>'+
+        '<div class="stat"><div class="label">합계</div><div class="value" style="color:#fbbf24">'+money(totalAmt)+'</div></div>'+
+      '</div>'+
+      (list.length
+        ? '<div class="data-wrap"><table><thead><tr><th>예약번호</th><th>고객</th><th>대여기간</th><th>연체</th><th>금액</th><th>입금상태</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        : '<div class="empty">해당 조건의 미수 예약이 없습니다.</div>');
+    if(typeof openModal==='function') openModal('fhkV244UnpaidAllModal');
+    else $('fhkV244UnpaidAllModal').classList.add('active');
+  }
+  window.fhkOpenUnpaidAllModal = openUnpaidAllModal;
+
+  // 약간의 스타일 보정(구역 제목)
+  (function injectCss(){
+    if($('fhkV244Style')) return;
+    const st=document.createElement('style');
+    st.id='fhkV244Style';
+    st.textContent = '.fhk-v244-group-title{font-size:12px;color:#9ca3af;font-weight:700;letter-spacing:.03em;margin-bottom:6px;text-transform:uppercase}';
+    document.head.appendChild(st);
+  })();
+
+  // 대시보드 렌더 뒤에 내 통계 영역으로 교체
+  // (한 번만 감싸면, 이후 비동기로(예: 클라우드 초기화 실패 후 폴백 등) window.renderDashboard 가
+  //  다시 교체될 때 내 래핑이 사라질 수 있다. 그래서 여러 시점에 "여전히 내가 감싸고 있는지"
+  //  재확인하고, 아니라면 그 시점의 최신 함수를 다시 감싼다 — renderEquipment 때와 동일한 패턴.)
+  function ensureDashboardWrapped(){
+    const cur = window.renderDashboard;
+    if(typeof cur !== 'function') return;
+    if(cur.__fhkV244Wrapped) return; // 이미 내가 감싼 상태
+    const wrapped = function(){
+      const r = cur.apply(this, arguments);
+      try{ renderStatsV244(); }catch(_){}
+      return r;
+    };
+    wrapped.__fhkV244Wrapped = true;
+    window.renderDashboard = wrapped;
+    try{ renderDashboard = wrapped; }catch(_){}
+  }
+  ensureDashboardWrapped();
+  [50,150,300,600,900,1500,2500].forEach(t=>setTimeout(ensureDashboardWrapped, t));
+
+  // 부팅 시 대시보드가 이미 떠 있으면 즉시 한 번 적용
+  [300,900,1800,3000].forEach(t=>setTimeout(()=>{ try{ if($('dashboard') && $('dashboard').classList.contains('active')) renderStatsV244(); }catch(_){} }, t));
+
+  // 지속 감시: dashStats 가 내 레이아웃이 아닌 다른 내용으로 다시 그려지면(비동기 초기화 등) 즉시 재적용.
+  // (renderEquipment 타이밍 전쟁 때와 같은 안전장치 패턴)
+  (function watchDashStats(){
+    const box = $('dashStats');
+    if(!box || !('MutationObserver' in window)) return;
+    let applying = false;
+    new MutationObserver(()=>{
+      if(applying) return;
+      if(!$('dashboard') || !$('dashboard').classList.contains('active')) return;
+      if(box.querySelector('.fhk-v244-group-title')) return; // 이미 내 레이아웃
+      applying = true;
+      try{ renderStatsV244(); }catch(_){}
+      applying = false;
+    }).observe(box, {childList:true, subtree:true});
+  })();
+})();
+</script>
+
+<script id="fhk-v245-booking-quote-button-script">
+/*
+  v245 — 예약 상세/수정 모달에 "견적서 보기" 버튼 추가
+   · 예약 목록에서 열든, 캘린더에서 예약을 클릭해서 열든 동일한 모달(#bookingModal)을 쓰므로
+     이 한 곳만 고치면 두 경로 모두에서 견적서로 바로 이동할 수 있다.
+   · 아직 저장 안 된 신규 예약(id 없음)에서 누르면 안내만 하고 이동하지 않는다.
+  ※ 이 블록만 지우면 버튼이 사라진다.
+*/
+(function(){
+  if(window.__fhkV245QuoteButton) return;
+  window.__fhkV245QuoteButton = true;
+
+  function ensureQuoteButton(){
+    const modal = document.getElementById('bookingModal');
+    if(!modal) return;
+    const footer = modal.querySelector('.modal-footer');
+    if(!footer || document.getElementById('fhkV245QuoteBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'fhkV245QuoteBtn';
+    btn.type = 'button';
+    btn.className = 'btn btn-secondary';
+    btn.textContent = '견적서 보기';
+    btn.onclick = function(){
+      const id = (document.getElementById('bkId')||{}).value || '';
+      if(!id){ alert('예약을 먼저 저장한 뒤 견적서를 볼 수 있습니다.'); return; }
+      try{ closeModal('bookingModal'); }catch(_){}
+      if(typeof openQuoteForBooking==='function') openQuoteForBooking(id);
+    };
+    footer.insertBefore(btn, footer.firstChild); // 취소/저장 버튼 왼쪽에 배치
+  }
+
+  // 모달이 열릴 때(활성화)마다 버튼이 있는지 보장
+  (function watchBookingModal(){
+    const modal = document.getElementById('bookingModal');
+    if(!modal || !('MutationObserver' in window)) return;
+    new MutationObserver(()=>{
+      if(modal.classList.contains('active')) ensureQuoteButton();
+    }).observe(modal, {attributes:true, attributeFilter:['class']});
+  })();
+
+  [300,900,1800].forEach(t=>setTimeout(()=>{
+    try{ const m=document.getElementById('bookingModal'); if(m && m.classList.contains('active')) ensureQuoteButton(); }catch(_){}
+  }, t));
+})();
+</script>
+
+<script id="fhk-v246-stats-month-picker-script">
+/*
+  v246 — 예약 통계 "월별" 기간 선택을 더 직관적으로
+   · ◀/▶ 로 한 달씩 바로 이동 (누르면 즉시 조회까지 됨)
+   · 가운데 "2026년 7월" 라벨을 누르면 연도 이동 + 월 그리드로 바로 선택 가능
+   · 기존 statsMonth input 은 숨겨서 그대로 두어(값 동기화) 나머지 로직은 안 건드림
+  ※ 이 블록만 지우면 기존 네모 달력 입력창(input type=month)으로 돌아간다.
+*/
+(function(){
+  if(window.__fhkV246MonthPicker) return;
+  window.__fhkV246MonthPicker = true;
+
+  const $ = id => document.getElementById(id);
+
+  function parseYM(v){
+    const [y,m] = String(v||'').split('-').map(Number);
+    if(!y||!m) { const d=new Date(); return {y:d.getFullYear(), m:d.getMonth()+1}; }
+    return {y, m};
+  }
+  function fmtYM(y,m){ return y+'-'+String(m).padStart(2,'0'); }
+
+  function closePopover(){
+    const pop = $('fhkV246Popover');
+    if(pop) pop.remove();
+    document.removeEventListener('mousedown', onOutsideClick, true);
+  }
+  function onOutsideClick(e){
+    const pop = $('fhkV246Popover');
+    const label = $('fhkV246MonthLabel');
+    if(pop && !pop.contains(e.target) && e.target!==label) closePopover();
+  }
+
+  function applyMonth(y, m, autoQuery){
+    const input = $('statsMonth');
+    if(!input) return;
+    input.value = fmtYM(y,m);
+    updateLabel();
+    if(autoQuery !== false){ try{ renderStatsModal(); }catch(_){} }
+  }
+  window.fhkV246ApplyMonth = applyMonth; // 다른 블록(예: v247 매출차트 막대 클릭)에서도 재사용
+
+  function updateLabel(){
+    const label = $('fhkV246MonthLabel');
+    const input = $('statsMonth');
+    if(!label || !input) return;
+    const {y,m} = parseYM(input.value);
+    label.textContent = `${y}년 ${m}월`;
+  }
+
+  function openPicker(){
+    closePopover();
+    const anchor = $('fhkV246MonthLabel');
+    if(!anchor) return;
+    const {y:curY, m:curM} = parseYM(($('statsMonth')||{}).value);
+    let viewYear = curY;
+
+    const pop = document.createElement('div');
+    pop.id = 'fhkV246Popover';
+    pop.style.cssText = 'position:absolute;z-index:250;background:#1a1d24;border:1px solid #2a2d35;border-radius:10px;padding:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);width:220px';
+    document.body.appendChild(pop);
+
+    function draw(){
+      pop.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <button type="button" class="btn btn-secondary btn-sm" id="fhkV246YPrev">◀</button>
+          <b style="color:#fff">${viewYear}년</b>
+          <button type="button" class="btn btn-secondary btn-sm" id="fhkV246YNext">▶</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          ${Array.from({length:12},(_,i)=>i+1).map(mm=>{
+            const active = (viewYear===curY && mm===curM);
+            return `<button type="button" class="btn ${active?'btn-primary':'btn-secondary'} btn-sm fhk-v246-m-btn" data-m="${mm}" style="padding:8px 0">${mm}월</button>`;
+          }).join('')}
+        </div>`;
+      pop.querySelector('#fhkV246YPrev').onclick = ()=>{ viewYear--; draw(); };
+      pop.querySelector('#fhkV246YNext').onclick = ()=>{ viewYear++; draw(); };
+      pop.querySelectorAll('.fhk-v246-m-btn').forEach(b=>{
+        b.onclick = ()=>{
+          const mm = Number(b.getAttribute('data-m'));
+          applyMonth(viewYear, mm);
+          closePopover();
+        };
+      });
+    }
+    draw();
+
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    pop.style.left = (window.scrollX + r.left) + 'px';
+
+    setTimeout(()=>document.addEventListener('mousedown', onOutsideClick, true), 0);
+  }
+
+  function buildPickerUI(){
+    const controls = $('statsControls');
+    if(!controls) return;
+    const input = $('statsMonth');
+    if(!input) return; // 월별 모드가 아니면 손대지 않음
+    if($('fhkV246MonthLabel')) { updateLabel(); return; } // 이미 있으면 값만 갱신
+
+    input.style.display = 'none';
+    const wrap = document.createElement('div');
+    wrap.id = 'fhkV246MonthPickerWrap';
+    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;position:relative';
+    wrap.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm" id="fhkV246Prev" title="이전 달">◀</button>
+      <button type="button" class="btn btn-secondary" id="fhkV246MonthLabel" style="min-width:104px;font-weight:700"></button>
+      <button type="button" class="btn btn-secondary btn-sm" id="fhkV246Next" title="다음 달">▶</button>
+    `;
+    input.insertAdjacentElement('afterend', wrap);
+    updateLabel();
+
+    $('fhkV246Prev').onclick = ()=>{ const {y,m}=parseYM(input.value); const d=new Date(y, m-2, 1); applyMonth(d.getFullYear(), d.getMonth()+1); };
+    $('fhkV246Next').onclick = ()=>{ const {y,m}=parseYM(input.value); const d=new Date(y, m, 1); applyMonth(d.getFullYear(), d.getMonth()+1); };
+    $('fhkV246MonthLabel').onclick = openPicker;
+  }
+
+  // renderStatsControls 가 다시 그려질 때마다(모드 전환 등) 재적용
+  (function wrapControls(){
+    const prev = window.renderStatsControls;
+    if(typeof prev !== 'function' || prev.__fhkV246Wrapped) return;
+    const wrapped = function(){
+      const r = prev.apply(this, arguments);
+      try{
+        const mode = ($('statsMode')||{}).value || 'month';
+        if(mode==='month') setTimeout(buildPickerUI, 0);
+      }catch(_){}
+      return r;
+    };
+    wrapped.__fhkV246Wrapped = true;
+    window.renderStatsControls = wrapped;
+    try{ renderStatsControls = wrapped; }catch(_){}
+  })();
+
+  // 모달이 열릴 때(월별이 기본 모드)도 적용
+  (function watchStatsModal(){
+    const modal = $('statsModal');
+    if(!modal || !('MutationObserver' in window)) return;
+    new MutationObserver(()=>{
+      if(modal.classList.contains('active')){
+        const mode = ($('statsMode')||{}).value || 'month';
+        if(mode==='month') setTimeout(buildPickerUI, 0);
+      }
+    }).observe(modal, {attributes:true, attributeFilter:['class']});
+  })();
+  [300,900,1800].forEach(t=>setTimeout(()=>{
+    try{
+      const modal=$('statsModal');
+      if(modal && modal.classList.contains('active')){
+        const mode=($('statsMode')||{}).value||'month';
+        if(mode==='month') buildPickerUI();
+      }
+    }catch(_){}
+  }, t));
+})();
+</script>
+
+<script id="fhk-v247-stats-tabs-script">
+/*
+  v247 — 예약 통계 탭 구조 재설계
+   · 매출추이 / 고객별 / 장비별 / 미수금 / 예약목록 5개 탭으로 정리
+   · 매출추이: 막대에 금액 표시 + 막대 클릭시 그 달로 조회 전환
+   · 고객별: 이 기간/전체 토글, 받은 할인 합계 표시
+   · 장비별(모델 기준, 다수 대여시 매출을 일수×단가 비율로 안분): 이 기간/전체 토글
+   · 미수금: 전체 누적 + 최근 12개월 월별 미수금
+   · 예약목록: 기존 목록
+  ※ 이 블록만 지우면 기존(스크롤형) 통계 화면으로 돌아간다.
+*/
+(function(){
+  if(window.__fhkV247StatsTabs) return;
+  window.__fhkV247StatsTabs = true;
+
+  const $ = id => document.getElementById(id);
+  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const money = n => { try{ if(typeof fmt==='function') return fmt(n); }catch(_){} return (Number(n)||0).toLocaleString('ko-KR')+'원'; };
+  const priceOf = b => { try{ return priceBreakdown(b); }catch(_){ return {total:0,base:0,days:0}; } };
+  const custName = id => { try{ const n=customerName(id); if(n) return n; }catch(_){} const c=(S().customers||[]).find(x=>x.id===id); return c?c.name:'(고객없음)'; };
+  const eqOf = id => (S().equipment||[]).find(e=>e.id===id);
+  const shortMoney = n => { const v=Number(n)||0; if(v>=100000000) return (v/100000000).toFixed(v%100000000===0?0:1)+'억'; if(v>=10000) return Math.round(v/10000)+'만'; return v.toLocaleString('ko-KR'); };
+
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function monthRangeYm(ymStr){
+    const [y,m]=String(ymStr).split('-').map(Number);
+    const last=new Date(y,m,0).getDate();
+    return {s:`${y}-${pad2(m)}-01`, e:`${y}-${pad2(m)}-${pad2(last)}`};
+  }
+  function yearRangeY(y){ return {s:`${y}-01-01`, e:`${y}-12-31`}; }
+  function quarterRangeYQ(y,q){ const sm=(q-1)*3+1, em=sm+2; const last=new Date(y,em,0).getDate(); return {s:`${y}-${pad2(sm)}-01`, e:`${y}-${pad2(em)}-${pad2(last)}`}; }
+
+  function currentPeriodRange(){
+    const mode = ($('statsMode')||{}).value || 'month';
+    if(mode==='year') return yearRangeY(Number(($('statsYear')||{}).value)||new Date().getFullYear());
+    if(mode==='quarter') return quarterRangeYQ(Number(($('statsYear')||{}).value)||new Date().getFullYear(), Number(($('statsQuarter')||{}).value)||1);
+    if(mode==='custom') return {s:($('statsStart')||{}).value||'0000-01-01', e:($('statsEnd')||{}).value||'9999-12-31'};
+    return monthRangeYm(($('statsMonth')||{}).value || `${new Date().getFullYear()}-${pad2(new Date().getMonth()+1)}`);
+  }
+  function bookingsInRange(r){ return (S().bookings||[]).filter(b=>b && b.status!=='cancelled' && b.startDate>=r.s && b.startDate<=r.e); }
+  function allBookings(){ return (S().bookings||[]).filter(b=>b && b.status!=='cancelled'); }
+  function discountAmt(p){ return (p.cont||0)+(p.student||0)+(p.kongju||0)+(p.manual||0); }
+
+  function customerBreakdown(list){
+    const map = {};
+    list.forEach(b=>{
+      const cid = b.customerId || '';
+      if(!map[cid]) map[cid] = {customerId:cid, name:custName(cid), count:0, revenue:0, discount:0};
+      const p = priceOf(b);
+      map[cid].count++;
+      map[cid].revenue += (p.total||0);
+      map[cid].discount += discountAmt(p);
+    });
+    return Object.values(map).sort((a,b)=>b.revenue-a.revenue);
+  }
+
+  function equipmentBreakdown(list){
+    const map = {};
+    list.forEach(b=>{
+      const p = priceOf(b);
+      const base = p.base || 0;
+      const ratio = base>0 ? (p.total||0)/base : 0;
+      (b.equipmentIds||[]).forEach(eid=>{
+        const e = eqOf(eid);
+        if(!e) return;
+        const raw = (Number(e.rate)||0) * (p.days||0);
+        const key = e.name || '(이름없음)';
+        if(!map[key]) map[key] = {name:key, category:e.category||'', count:0, revenue:0};
+        map[key].count++;
+        map[key].revenue += raw * ratio;
+      });
+    });
+    return Object.values(map).sort((a,b)=>b.revenue-a.revenue);
+  }
+
+  function monthlySeries(n, kind){
+    const now = new Date();
+    const months = [];
+    for(let i=n-1;i>=0;i--){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); months.push(`${d.getFullYear()}-${pad2(d.getMonth()+1)}`); }
+    return months.map(m=>{
+      const r = monthRangeYm(m);
+      const list = bookingsInRange(r);
+      const total = kind==='unpaid'
+        ? list.filter(b=>b.payment!=='paid').reduce((s,b)=>s+(priceOf(b).total||0),0)
+        : list.reduce((s,b)=>s+(priceOf(b).total||0),0);
+      return {ym:m, label:(Number(m.split('-')[1]))+'월', total};
+    });
+  }
+
+  function allTimeUnpaid(){
+    let amount=0, count=0;
+    allBookings().filter(b=>b.payment!=='paid').forEach(b=>{ const t=priceOf(b).total||0; if(t>0){ amount+=t; count++; } });
+    return {amount, count};
+  }
+
+  function buildChart(series, clickable){
+    const W=760, CH=150, padL=6, padR=6, padT=22, padB=24;
+    const max = Math.max(1, ...series.map(x=>x.total));
+    const n = series.length;
+    const gap = n>8 ? 6 : 12;
+    const barW = (W-padL-padR-gap*(n-1))/n;
+    const plotH = CH-padT-padB;
+    const gridLines = [0.5,1].map(f=>{
+      const gy = padT + plotH*(1-f);
+      return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="#2a2d35" stroke-width="1" stroke-dasharray="3,4"/>`;
+    }).join('');
+    const bars = series.map((x,i)=>{
+      const h = Math.max(2, (x.total/max) * plotH);
+      const bx = padL + i*(barW+gap);
+      const by = CH-padB-h;
+      const isCur = i===n-1;
+      const fill = isCur ? 'url(#fhkV247GradCur)' : 'url(#fhkV247Grad)';
+      const valueLabel = x.total>0 ? shortMoney(x.total) : '';
+      return `<g class="${clickable?'fhk-v247-bar':''}" data-ym="${x.ym}" style="${clickable?'cursor:pointer':''}">
+        <rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(6,barW/3).toFixed(1)}" fill="${fill}"><title>${H(x.label)}: ${H(money(x.total))}</title></rect>
+        ${valueLabel?`<text x="${(bx+barW/2).toFixed(1)}" y="${(by-6).toFixed(1)}" font-size="11" fill="#a3adc2" text-anchor="middle" font-weight="700">${H(valueLabel)}</text>`:''}
+        <text x="${(bx+barW/2).toFixed(1)}" y="${CH-7}" font-size="11" fill="#6b7280" text-anchor="middle">${H(x.label)}</text>
+      </g>`;
+    }).join('');
+    const defs = `<defs>
+      <linearGradient id="fhkV247Grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4c6ea8"/><stop offset="100%" stop-color="#324566"/></linearGradient>
+      <linearGradient id="fhkV247GradCur" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7cb3ff"/><stop offset="100%" stop-color="#4a8ce8"/></linearGradient>
+    </defs>`;
+    return `<svg viewBox="0 0 ${W} ${CH}" style="width:100%;height:auto;max-height:170px;display:block" preserveAspectRatio="xMidYMid meet">${defs}${gridLines}${bars}</svg>`;
+  }
+
+  const TABS = [
+    {id:'summary', label:'요약'},
+    {id:'trend', label:'매출 추이'},
+    {id:'customer', label:'고객별'},
+    {id:'equipment', label:'장비별'},
+    {id:'unpaid', label:'미수금'},
+    {id:'list', label:'예약 목록'}
+  ];
+
+  function tabBarHTML(active){
+    return `<div class="fhk-v247-tabbar" style="display:flex;gap:4px;border-bottom:1px solid #2a2d35;margin-bottom:14px;flex-wrap:wrap">
+      ${TABS.map(t=>`<button type="button" class="fhk-v247-tab" data-tab="${t.id}" style="background:transparent;border:0;padding:10px 14px;cursor:pointer;color:${t.id===active?'#fff':'#9ca3af'};border-bottom:2px solid ${t.id===active?'#fff':'transparent'};font-weight:${t.id===active?'700':'500'};font-size:13px">${t.label}</button>`).join('')}
+    </div>`;
+  }
+
+  // 현재 조회 기간(상단 월/분기/년/직접선택)에 대한 요약 스탯 (기간·예약건수·매출·미수금)
+  function periodSummary(){
+    const r = currentPeriodRange();
+    const list = bookingsInRange(r);
+    const total = list.reduce((s,b)=>s+(priceOf(b).total||0),0);
+    const unpaid = list.filter(b=>b.payment!=='paid').reduce((s,b)=>s+(priceOf(b).total||0),0);
+    const label = periodLabel();
+    return {r, list, total, unpaid, count:list.length, label};
+  }
+  function periodLabel(){
+    const mode = ($('statsMode')||{}).value || 'month';
+    if(mode==='year') return `${($('statsYear')||{}).value||''}년`;
+    if(mode==='quarter') return `${($('statsYear')||{}).value||''}년 ${($('statsQuarter')||{}).value||''}분기`;
+    if(mode==='custom') return `${($('statsStart')||{}).value||''} ~ ${($('statsEnd')||{}).value||''}`;
+    const mi = ($('statsMonth')||{}).value || '';
+    const [y,m] = mi.split('-');
+    return (y&&m) ? `${y}년 ${Number(m)}월` : mi;
+  }
+
+  function summaryStatCardsHTML(sum){
+    return `<div class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      <div class="stat"><div class="label">기간</div><div class="value" style="font-size:16px">${H(sum.label)}</div></div>
+      <div class="stat"><div class="label">예약건수</div><div class="value">${sum.count}</div></div>
+      <div class="stat"><div class="label">예약총액</div><div class="value" style="font-size:18px">${H(money(sum.total))}</div></div>
+      <div class="stat"><div class="label">미수금</div><div class="value" style="font-size:18px;color:#fbbf24">${H(money(sum.unpaid))}</div></div>
+    </div>`;
+  }
+
+  // 월별 매출 표 (지난 버전 스타일: 그래프가 아니라 표로 숫자 그대로)
+  function monthlyRevenueTableHTML(n){
+    const series = monthlySeries(n||12, 'revenue');
+    return `<div class="data-wrap"><table><thead><tr><th>월</th><th>매출</th></tr></thead><tbody>
+      ${series.slice().reverse().map(x=>`<tr class="fhk-v247-month-row" data-ym="${x.ym}" style="cursor:pointer"><td>${H(x.label)}</td><td class="num">${H(money(x.total))}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  }
+
+  function renderSummaryTab(){
+    const sum = periodSummary();
+    const custRows = customerBreakdown(sum.list).slice(0,5);
+    return `
+      ${summaryStatCardsHTML(sum)}
+      <div class="grid2" style="margin-bottom:16px">
+        <div class="card">
+          <h4>고객별 매출 (상위 5)</h4>
+          <div class="data-wrap"><table><thead><tr><th>고객</th><th>건수</th><th>매출</th></tr></thead><tbody>
+            ${custRows.length?custRows.map(x=>`<tr><td><b style="cursor:pointer;color:#60a5fa" onclick="showCustomerHistory('${x.customerId}')">${H(x.name)}</b></td><td>${x.count}</td><td class="num">${H(money(x.revenue))}</td></tr>`).join(''):'<tr><td colspan="3" style="text-align:center;color:#6b7280">데이터 없음</td></tr>'}
+          </tbody></table></div>
+        </div>
+        <div class="card">
+          <h4>월별 매출 (최근 12개월)</h4>
+          ${monthlyRevenueTableHTML(12)}
+        </div>
+      </div>`;
+  }
+
+  function renderTrendTab(){
+    const sum = periodSummary();
+    const series = monthlySeries(12, 'revenue');
+    return `
+      ${summaryStatCardsHTML(sum)}
+      <div class="card" style="padding:14px;margin-bottom:16px">
+        ${buildChart(series, true)}
+        <div style="font-size:11px;color:#6b7280;margin-top:6px">막대를 클릭하면 해당 월로 조회가 전환됩니다.</div>
+      </div>
+      <div class="card">
+        <h4>월별 매출</h4>
+        ${monthlyRevenueTableHTML(12)}
+      </div>`;
+  }
+
+  function scopeToggleHTML(scope){
+    return `<div class="fhk-v247-scope-toggle" style="display:flex;gap:6px">
+      <button type="button" class="btn btn-sm ${scope!=='all'?'btn-primary':'btn-secondary'}" data-scope="period">이 기간</button>
+      <button type="button" class="btn btn-sm ${scope==='all'?'btn-primary':'btn-secondary'}" data-scope="all">전체 기간</button>
+    </div>`;
+  }
+
+  function renderCustomerTab(scope){
+    const list = scope==='all' ? allBookings() : bookingsInRange(currentPeriodRange());
+    const rows = customerBreakdown(list);
+    const totalRev = rows.reduce((s,x)=>s+x.revenue,0);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 기간':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
+        ${scopeToggleHTML(scope)}
+      </div>
+      <div class="data-wrap"><table><thead><tr><th>고객</th><th>예약건수</th><th>매출</th><th>받은 할인</th></tr></thead><tbody>
+        ${rows.length?rows.map(x=>`<tr>
+          <td><b style="cursor:pointer;color:#60a5fa" onclick="showCustomerHistory('${x.customerId}')">${H(x.name)}</b></td>
+          <td>${x.count}</td>
+          <td class="num">${H(money(x.revenue))}</td>
+          <td class="num" style="color:${x.discount>0?'#fbbf24':'#6b7280'}">${x.discount>0?H(money(x.discount)):'-'}</td>
+        </tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#6b7280">데이터 없음</td></tr>'}
+      </tbody></table></div>`;
+  }
+
+  function renderEquipmentTab(scope){
+    const list = scope==='all' ? allBookings() : bookingsInRange(currentPeriodRange());
+    const rows = equipmentBreakdown(list);
+    const totalRev = rows.reduce((s,x)=>s+x.revenue,0);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 기간':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
+        ${scopeToggleHTML(scope)}
+      </div>
+      <div class="data-wrap"><table><thead><tr><th>장비(모델)</th><th>카테고리</th><th>대여횟수</th><th>매출</th></tr></thead><tbody>
+        ${rows.length?rows.map(x=>`<tr>
+          <td><b>${H(x.name)}</b></td>
+          <td>${H(x.category)}</td>
+          <td>${x.count}</td>
+          <td class="num">${H(money(x.revenue))}</td>
+        </tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#6b7280">데이터 없음</td></tr>'}
+      </tbody></table></div>`;
+  }
+
+  function renderUnpaidTab(){
+    const all = allTimeUnpaid();
+    const series = monthlySeries(12, 'unpaid');
+    return `
+      <div class="stats" style="grid-template-columns:1fr;margin-bottom:14px">
+        <div class="stat"><div class="label">전체 누적 미수금</div><div class="value" style="color:#f97316">${H(money(all.amount))}</div><div class="sub">${all.count}건</div></div>
+      </div>
+      <div class="card" style="padding:14px;margin-bottom:14px">
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">최근 12개월 월별 미수금</div>
+        ${buildChart(series, false)}
+      </div>
+      <div class="data-wrap"><table><thead><tr><th>월</th><th>미수금</th></tr></thead><tbody>
+        ${series.slice().reverse().map(x=>`<tr><td>${H(x.label)}</td><td class="num">${H(money(x.total))}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  function renderListTab(){
+    const list = bookingsInRange(currentPeriodRange()).sort((a,b)=>(a.startDate||'').localeCompare(b.startDate||''));
+    return `<div class="data-wrap"><table><thead><tr><th>예약번호</th><th>고객</th><th>기간</th><th>장비</th><th>상태</th><th>금액</th></tr></thead><tbody>
+      ${list.length?list.map(b=>{
+        const p = priceOf(b);
+        let statusLabel='예약', statusColor='#60a5fa';
+        try{ const st=effectiveBookingStatus(b); if(st==='active'){statusLabel='대여중';statusColor='#34d399';} else if(st==='overdue'){statusLabel='연체';statusColor='#f87171';} else if(b.status==='returned'){statusLabel='반납완료';statusColor='#9ca3af';} }catch(_){}
+        const eqNames = (b.equipmentIds||[]).map(id=>{const e=eqOf(id);return e?e.name:'';}).filter(Boolean).join(', ');
+        return `<tr>
+          <td><b style="cursor:pointer;color:#60a5fa" onclick="closeModal('statsModal');if(typeof openBookingModal==='function')openBookingModal('${b.id}')">${H(b.bookingNo||'')}</b></td>
+          <td><b style="cursor:pointer;color:#60a5fa" onclick="showCustomerHistory('${b.customerId}')">${H(custName(b.customerId))}</b></td>
+          <td>${H(b.startDate)} ~ ${H(b.endDate)}</td>
+          <td style="font-size:12px">${H(eqNames)}</td>
+          <td><span style="color:${statusColor}">${statusLabel}</span></td>
+          <td class="num">${H(money(p.total))}</td>
+        </tr>`;
+      }).join(''):'<tr><td colspan="6" style="text-align:center;color:#6b7280">예약 없음</td></tr>'}
+    </tbody></table></div>`;
+  }
+
+  let currentTab = 'summary';
+  let customerScope = 'period';
+  let equipmentScope = 'period';
+
+  function switchToMonth(ym){
+    if(!ym) return;
+    const [yy,mm] = ym.split('-').map(Number);
+    const modeSel = $('statsMode'); if(modeSel) modeSel.value='month';
+    try{ renderStatsControls(); }catch(_){} // statsMonth 입력칸(+v246 피커)을 '월별' 모드로 재구성
+    setTimeout(()=>{
+      if(typeof window.fhkV246ApplyMonth==='function'){
+        window.fhkV246ApplyMonth(yy, mm, true); // 값 설정+라벨 갱신+조회까지 한번에
+      }else{
+        const mi=$('statsMonth'); if(mi){ mi.value=ym; }
+        try{ renderStatsModal(); }catch(_){}
+      }
+    }, 10);
+  }
+
+  function renderTabContent(){
+    const wrap = $('fhkV247TabContent');
+    if(!wrap) return;
+    if(currentTab==='summary') wrap.innerHTML = renderSummaryTab();
+    else if(currentTab==='trend') wrap.innerHTML = renderTrendTab();
+    else if(currentTab==='customer') wrap.innerHTML = renderCustomerTab(customerScope);
+    else if(currentTab==='equipment') wrap.innerHTML = renderEquipmentTab(equipmentScope);
+    else if(currentTab==='unpaid') wrap.innerHTML = renderUnpaidTab();
+    else if(currentTab==='list') wrap.innerHTML = renderListTab();
+    bindTabContentEvents();
+  }
+
+  function bindTabContentEvents(){
+    const wrap = $('fhkV247TabContent');
+    if(!wrap) return;
+    wrap.querySelectorAll('.fhk-v247-bar').forEach(g=>{
+      g.addEventListener('click', ()=> switchToMonth(g.getAttribute('data-ym')));
+    });
+    wrap.querySelectorAll('.fhk-v247-month-row').forEach(tr=>{
+      tr.addEventListener('click', ()=> switchToMonth(tr.getAttribute('data-ym')));
+    });
+    wrap.querySelectorAll('.fhk-v247-scope-toggle button').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const scope = btn.getAttribute('data-scope')==='all' ? 'all' : 'period';
+        if(currentTab==='customer') customerScope = scope;
+        else if(currentTab==='equipment') equipmentScope = scope;
+        renderTabContent();
+      });
+    });
+  }
+
+  function ensureTabbedLayout(){
+    const root = $('statsContent');
+    if(!root) return;
+    if($('fhkV247TabContent')){ renderTabContent(); return; }
+    root.innerHTML = tabBarHTML(currentTab) + `<div id="fhkV247TabContent"></div>`;
+    root.querySelectorAll('.fhk-v247-tab').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        currentTab = btn.getAttribute('data-tab');
+        root.querySelectorAll('.fhk-v247-tab').forEach(b=>{
+          const active = b.getAttribute('data-tab')===currentTab;
+          b.style.color = active?'#fff':'#9ca3af';
+          b.style.borderBottomColor = active?'#fff':'transparent';
+          b.style.fontWeight = active?'700':'500';
+        });
+        renderTabContent();
+      });
+    });
+    renderTabContent();
+  }
+
+  function ensureWrapped(){
+    const cur = window.renderStatsModal;
+    if(typeof cur !== 'function' || cur.__fhkV247Wrapped) return;
+    const wrapped = function(){
+      const r = cur.apply(this, arguments);
+      try{ ensureTabbedLayout(); }catch(_){}
+      return r;
+    };
+    wrapped.__fhkV247Wrapped = true;
+    window.renderStatsModal = wrapped;
+    try{ renderStatsModal = wrapped; }catch(_){}
+  }
+  ensureWrapped();
+  [50,150,300,600,900,1500,2500].forEach(t=>setTimeout(ensureWrapped, t));
 })();
 </script>
 
