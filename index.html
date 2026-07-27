@@ -18790,7 +18790,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v261';
+  const DISPLAY_VERSION = 'v265';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
@@ -20770,7 +20770,7 @@ else{bump();injectGroupCard();}
         const key = e.name || '(이름없음)';
         if(!map[key]) map[key] = {name:key, category:e.category||'', count:0, revenue:0};
         map[key].count++;
-        map[key].revenue += raw * ratio;
+        map[key].revenue += Math.round(raw * ratio); // 소수점 원 단위 방지(반올림)
       });
     });
     return Object.values(map).sort((a,b)=>b.revenue-a.revenue);
@@ -20860,21 +20860,36 @@ else{bump();injectGroupCard();}
     const [y,m] = mi.split('-');
     return (y&&m) ? `${y}년 ${Number(m)}월` : mi;
   }
+  // 조회 기간과 무관하게: 실제 "이번달"(오늘 기준)과 "전체 누적" 매출
+  function thisMonthAndAllTimeRevenue(){
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${pad2(now.getMonth()+1)}`;
+    const thisMonthTotal = bookingsInRange(monthRangeYm(ym)).reduce((s,b)=>s+(priceOf(b).total||0),0);
+    const allTimeTotal = allBookings().reduce((s,b)=>s+(priceOf(b).total||0),0);
+    return {thisMonthTotal, allTimeTotal};
+  }
 
   function summaryStatCardsHTML(sum){
-    return `<div class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    const mt = thisMonthAndAllTimeRevenue();
+    return `<div class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px">
       <div class="stat"><div class="label">기간</div><div class="value" style="font-size:16px">${H(sum.label)}</div></div>
       <div class="stat"><div class="label">예약건수</div><div class="value">${sum.count}</div></div>
       <div class="stat"><div class="label">예약총액</div><div class="value" style="font-size:18px">${H(money(sum.total))}</div></div>
       <div class="stat"><div class="label">미수금</div><div class="value" style="font-size:18px;color:#fbbf24">${H(money(sum.unpaid))}</div></div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px">
+      <div class="stat"><div class="label">이번달 매출</div><div class="value" style="font-size:17px;color:#60a5fa">${H(money(mt.thisMonthTotal))}</div></div>
+      <div class="stat"><div class="label">전체 누적 매출</div><div class="value" style="font-size:17px;color:#4ade80">${H(money(mt.allTimeTotal))}</div></div>
     </div>`;
   }
 
-  // 월별 매출 표 (지난 버전 스타일: 그래프가 아니라 표로 숫자 그대로)
+  // 월별 매출 표 (지난 버전 스타일: 그래프가 아니라 표로 숫자 그대로) + 합계 행
   function monthlyRevenueTableHTML(n){
     const series = monthlySeries(n||12, 'revenue');
+    const sum = series.reduce((s,x)=>s+x.total,0);
     return `<div class="data-wrap"><table><thead><tr><th>월</th><th>매출</th></tr></thead><tbody>
       ${series.slice().reverse().map(x=>`<tr class="fhk-v247-month-row" data-ym="${x.ym}" style="cursor:pointer"><td>${H(x.label)}</td><td class="num">${H(money(x.total))}</td></tr>`).join('')}
+      <tr style="font-weight:800;background:#1a1d24"><td>합계(${series.length}개월)</td><td class="num">${H(money(sum))}</td></tr>
     </tbody></table></div>`;
   }
 
@@ -20915,22 +20930,33 @@ else{bump();injectGroupCard();}
   function scopeToggleHTML(scope){
     return `<div class="fhk-v247-scope-toggle" style="display:flex;gap:6px">
       <button type="button" class="btn btn-sm ${scope!=='all'?'btn-primary':'btn-secondary'}" data-scope="period">이 기간</button>
-      <button type="button" class="btn btn-sm ${scope==='all'?'btn-primary':'btn-secondary'}" data-scope="all">전체 기간</button>
+      <button type="button" class="btn btn-sm ${scope==='all'?'btn-primary':'btn-secondary'}" data-scope="all">전체 누적</button>
     </div>`;
   }
 
-  function renderCustomerTab(scope){
+  function renderCustomerTab(scope, sortBy){
     const list = scope==='all' ? allBookings() : bookingsInRange(currentPeriodRange());
-    const rows = customerBreakdown(list);
+    let rows = customerBreakdown(list);
     const totalRev = rows.reduce((s,x)=>s+x.revenue,0);
+    // 가장 많이 "빌린"(대여건수 기준) 고객 — 정렬 기준과 무관하게 항상 표시
+    const topByCount = rows.length ? rows.slice().sort((a,b)=>b.count-a.count)[0] : null;
+    if(sortBy==='count') rows = rows.slice().sort((a,b)=>b.count-a.count || b.revenue-a.revenue);
+    else rows = rows.slice().sort((a,b)=>b.revenue-a.revenue); // 기본: 매출순 (customerBreakdown 이 이미 매출순이지만 명시)
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 기간':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 누적':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
         ${scopeToggleHTML(scope)}
+      </div>
+      ${scope==='all'?'<div style="font-size:11px;color:#f97316;margin-bottom:8px">※ 지금까지 있었던 모든 예약을 합산한 누적 수치입니다.</div>':''}
+      ${topByCount ? `<div style="font-size:12px;color:#60a5fa;margin-bottom:10px">▸ 가장 많이 빌린 고객: <b style="cursor:pointer" onclick="showCustomerHistory('${topByCount.customerId}')">${H(topByCount.name)}</b> (${topByCount.count}건 · ${H(money(topByCount.revenue))})</div>` : ''}
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <span style="font-size:11px;color:#6b7280;align-self:center">정렬</span>
+        <button type="button" class="btn btn-sm ${sortBy!=='count'?'btn-primary':'btn-secondary'}" data-sort="revenue">매출순</button>
+        <button type="button" class="btn btn-sm ${sortBy==='count'?'btn-primary':'btn-secondary'}" data-sort="count">대여건수순</button>
       </div>
       <div class="data-wrap"><table><thead><tr><th>고객</th><th>예약건수</th><th>매출</th><th>받은 할인</th></tr></thead><tbody>
         ${rows.length?rows.map(x=>`<tr>
-          <td><b style="cursor:pointer;color:#60a5fa" onclick="showCustomerHistory('${x.customerId}')">${H(x.name)}</b></td>
+          <td><b style="cursor:pointer;color:#60a5fa" onclick="showCustomerHistory('${x.customerId}')">${H(x.name)}</b>${topByCount&&x.customerId===topByCount.customerId?' <span style="font-size:10px;color:#60a5fa;border:1px solid #60a5fa;border-radius:999px;padding:1px 6px">최다</span>':''}</td>
           <td>${x.count}</td>
           <td class="num">${H(money(x.revenue))}</td>
           <td class="num" style="color:${x.discount>0?'#fbbf24':'#6b7280'}">${x.discount>0?H(money(x.discount)):'-'}</td>
@@ -20943,10 +20969,11 @@ else{bump();injectGroupCard();}
     const rows = equipmentBreakdown(list);
     const totalRev = rows.reduce((s,x)=>s+x.revenue,0);
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 기간':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:#9ca3af">${scope==='all'?'전체 누적':'현재 조회 기간'} · 매출 합계 ${H(money(totalRev))}</div>
         ${scopeToggleHTML(scope)}
       </div>
+      ${scope==='all'?'<div style="font-size:11px;color:#f97316;margin-bottom:10px">※ 지금까지 있었던 모든 예약을 합산한 누적 수치입니다. 특정 기간만 보려면 "이 기간"을 눌러주세요.</div>':'<div style="margin-bottom:10px"></div>'}
       <div class="data-wrap"><table><thead><tr><th>장비(모델)</th><th>카테고리</th><th>대여횟수</th><th>매출</th></tr></thead><tbody>
         ${rows.length?rows.map(x=>`<tr>
           <td><b>${H(x.name)}</b></td>
@@ -20996,6 +21023,7 @@ else{bump();injectGroupCard();}
   let currentTab = 'summary';
   let customerScope = 'period';
   let equipmentScope = 'period';
+  let customerSort = 'revenue';
 
   function switchToMonth(ym){
     if(!ym) return;
@@ -21017,7 +21045,7 @@ else{bump();injectGroupCard();}
     if(!wrap) return;
     if(currentTab==='summary') wrap.innerHTML = renderSummaryTab();
     else if(currentTab==='trend') wrap.innerHTML = renderTrendTab();
-    else if(currentTab==='customer') wrap.innerHTML = renderCustomerTab(customerScope);
+    else if(currentTab==='customer') wrap.innerHTML = renderCustomerTab(customerScope, customerSort);
     else if(currentTab==='equipment') wrap.innerHTML = renderEquipmentTab(equipmentScope);
     else if(currentTab==='unpaid') wrap.innerHTML = renderUnpaidTab();
     else if(currentTab==='list') wrap.innerHTML = renderListTab();
@@ -21038,6 +21066,12 @@ else{bump();injectGroupCard();}
         const scope = btn.getAttribute('data-scope')==='all' ? 'all' : 'period';
         if(currentTab==='customer') customerScope = scope;
         else if(currentTab==='equipment') equipmentScope = scope;
+        renderTabContent();
+      });
+    });
+    wrap.querySelectorAll('[data-sort]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        customerSort = btn.getAttribute('data-sort')==='count' ? 'count' : 'revenue';
         renderTabContent();
       });
     });
@@ -21077,6 +21111,402 @@ else{bump();injectGroupCard();}
   }
   ensureWrapped();
   [50,150,300,600,900,1500,2500].forEach(t=>setTimeout(ensureWrapped, t));
+})();
+</script>
+
+<script id="fhk-v248-mobile-selected-table-cards-script">
+/*
+  v248 — 모바일에서 "선택된 장비" 표가 카드형으로 보이도록 (가로 스크롤/쏠림 방지)
+   · 문제: .selected-table (장비/일단가/청구/삭제 4열)이 좁은 화면에 안 들어가서
+     모달 전체가 가로로 밀려 "오른쪽으로 쏠린" 것처럼 보였다.
+   · 해결: CSS만으로 좁은 화면에서 표를 세로 카드 목록으로 재배치.
+     표를 만드는 JS 함수는 여러 개(전부 같은 구조)라서 건드리지 않고,
+     CSS 만으로 처리해 어떤 버전이 그리든 항상 적용되게 했다.
+  ※ 이 블록만 지우면 원래(좁은 화면에서도 표 형태 그대로)로 돌아간다.
+*/
+(function(){
+  if(window.__fhkV248MobileCards) return;
+  window.__fhkV248MobileCards = true;
+  const st = document.createElement('style');
+  st.id = 'fhkV248Style';
+  st.textContent = `
+    @media (max-width:760px){
+      /* CSS Grid 자식(.card 등)은 기본적으로 min-width:auto 라서, 안의 표가 넓으면
+         grid item 자체가 강제로 넓어져 모달 전체가 가로로 밀려버린다. 0으로 풀어준다. */
+      .grid2 > *, .grid3 > *, .modal-body > *{ min-width:0; }
+      .selected-table{border:0; min-width:0 !important; width:100% !important; max-width:100% !important; table-layout:fixed !important;}
+      .selected-table thead{display:none;}
+      .selected-table, .selected-table tbody{display:block;width:100% !important;min-width:0 !important;}
+      .selected-table tr{
+        display:block; width:100% !important; box-sizing:border-box; min-width:0 !important;
+        border:1px solid #2a2d35; border-radius:10px; background:#171a20;
+        padding:12px; margin-bottom:10px;
+      }
+      .selected-table td{
+        display:block; width:100% !important; box-sizing:border-box; min-width:0 !important;
+        border:0; padding:3px 0; text-align:left !important; font-size:13px;
+        white-space:normal !important; word-break:break-word;
+      }
+      .selected-table td:first-child{ padding-bottom:8px; margin-bottom:6px; border-bottom:1px dashed #2a2d35; }
+      .selected-table td:nth-child(2)::before{ content:'일 단가  '; color:#9ca3af; font-size:12px; }
+      .selected-table td:nth-child(3)::before{ content:'청구  '; color:#9ca3af; font-size:12px; }
+      .selected-table td:last-child{ margin-top:8px; }
+      .selected-table td:last-child .btn{ width:100%; }
+    }
+  `;
+  document.head.appendChild(st);
+})();
+</script>
+
+<script id="fhk-v249-addon-options-script">
+/*
+  v249 — 장비 "추가 옵션" (모델 기준)
+   · 장비 등록/수정 화면에서 모델별로 추가 옵션을 등록한다.
+     예) Accsoon CineView Master → "수신기 추가" 10,000원 (하루당/1회성 선택)
+   · 같은 모델은 옵션을 공유한다(모델 기준 저장: state.addonOptions[모델명]).
+   · 예약할 때 해당 장비를 선택하면 옵션이 뜨고, 수량을 정해 담을 수 있다.
+   · 선택한 옵션 금액은 예약 금액(priceBreakdown)에 자동 반영되고 견적서에도 표시된다.
+  ※ 이 블록만 지우면 기능이 제거된다(등록해둔 옵션 데이터는 남지만 무해).
+*/
+(function(){
+  if(window.__fhkV249Addon) return;
+  window.__fhkV249Addon = true;
+
+  const $ = id => document.getElementById(id);
+  const S = () => { try{ return state; }catch(_){ return window.state||{}; } };
+  const H = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const money = n => { try{ if(typeof fmt==='function') return fmt(n); }catch(_){} return (Number(n)||0).toLocaleString('ko-KR')+'원'; };
+  const N = v => String(v??'').replace(/\s+/g,' ').trim();
+  const saveNow = () => { try{ if(typeof save==='function') return save(); }catch(_){} try{ localStorage.setItem('filmhk_rental_v2', JSON.stringify(S())); }catch(_){} };
+  const eqOf = id => (S().equipment||[]).find(e=>e && e.id===id);
+
+  /* ---------- 데이터: state.addonOptions = { "모델명": [{name, price, perDay}] } ---------- */
+  function allOptions(){ const st=S(); st.addonOptions = st.addonOptions || {}; return st.addonOptions; }
+  function optionsForModel(model){ return (allOptions()[N(model)]||[]).filter(o=>o && N(o.name)); }
+  function setOptionsForModel(model, list){
+    const st=S(); st.addonOptions = st.addonOptions || {};
+    const key = N(model);
+    if(!key) return;
+    if(list && list.length) st.addonOptions[key] = list;
+    else delete st.addonOptions[key];
+  }
+
+  /* 예약별 선택: booking.addonSelections = { [equipmentId]: { [optionName]: qty } } */
+  function selectionsOf(b){ return (b && b.addonSelections) || {}; }
+  function addonTotalFor(b, days){
+    if(!b) return 0;
+    const sel = selectionsOf(b);
+    let sum = 0;
+    Object.keys(sel).forEach(eid=>{
+      const e = eqOf(eid);
+      if(!e) return;
+      const opts = optionsForModel(e.name);
+      Object.keys(sel[eid]||{}).forEach(optName=>{
+        const qty = Number(sel[eid][optName])||0;
+        if(qty<=0) return;
+        const opt = opts.find(o=>N(o.name)===N(optName));
+        if(!opt) return;
+        const unit = Number(opt.price)||0;
+        sum += opt.perDay ? unit*qty*(Number(days)||1) : unit*qty;
+      });
+    });
+    return sum;
+  }
+  window.fhkV249AddonTotal = addonTotalFor;
+
+  /* ---------- (1) 가격 반영: priceBreakdown 래핑 ---------- */
+  (function wrapPrice(){
+    const prev = window.priceBreakdown || (typeof priceBreakdown==='function'?priceBreakdown:null);
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(b){
+      const p = prev.apply(this, arguments) || {};
+      try{
+        const add = addonTotalFor(b, p.days);
+        if(add>0){
+          p.addon = add;
+          // 자체촬영(매출 제외)은 total 이 0 으로 유지되어야 하므로 건드리지 않는다
+          if(!(b && b.internal)) p.total = (Number(p.total)||0) + add;
+          if(p.grossTotal!=null) p.grossTotal = (Number(p.grossTotal)||0) + add;
+        }
+      }catch(_){}
+      return p;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.priceBreakdown = wrapped;
+    try{ priceBreakdown = wrapped; }catch(_){}
+  })();
+
+  /* ---------- (2) 장비 등록/수정 모달에 옵션 편집 UI ---------- */
+  let draftOptions = [];   // 모달에서 편집 중인 옵션들
+
+  function renderOptionEditor(){
+    const box = $('fhkV249OptList');
+    if(!box) return;
+    if(!draftOptions.length){
+      box.innerHTML = '<div style="color:#6b7280;font-size:12px;padding:6px 0">등록된 추가 옵션이 없습니다.</div>';
+      return;
+    }
+    box.innerHTML = draftOptions.map((o,i)=>`
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+        <input type="text" value="${H(o.name||'')}" data-idx="${i}" data-f="name" placeholder="옵션명 (예: 수신기 추가)" style="flex:2;min-width:130px">
+        <input type="number" value="${Number(o.price)||0}" data-idx="${i}" data-f="price" step="1000" placeholder="금액" style="flex:1;min-width:90px">
+        <label style="display:flex;gap:4px;align-items:center;font-size:12px;color:#9ca3af;white-space:nowrap">
+          <input type="checkbox" ${o.perDay?'checked':''} data-idx="${i}" data-f="perDay"> 하루당
+        </label>
+        <button type="button" class="btn btn-danger btn-sm" data-idx="${i}" data-f="del">삭제</button>
+      </div>`).join('');
+    box.querySelectorAll('[data-idx]').forEach(el=>{
+      const i = Number(el.getAttribute('data-idx'));
+      const f = el.getAttribute('data-f');
+      if(f==='del'){ el.onclick = ()=>{ draftOptions.splice(i,1); renderOptionEditor(); }; return; }
+      const ev = (f==='perDay') ? 'change' : 'input';
+      el.addEventListener(ev, ()=>{
+        if(f==='perDay') draftOptions[i].perDay = el.checked;
+        else if(f==='price') draftOptions[i].price = Number(el.value)||0;
+        else draftOptions[i][f] = el.value;
+      });
+    });
+  }
+
+  function ensureOptionEditor(){
+    const modal = $('equipmentModal');
+    if(!modal) return;
+    const body = modal.querySelector('.modal-body');
+    if(!body || $('fhkV249OptSection')) return;
+    const sec = document.createElement('div');
+    sec.id = 'fhkV249OptSection';
+    sec.style.cssText = 'margin-top:14px;padding-top:14px;border-top:1px solid #2a2d35';
+    sec.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <b style="font-size:13px">추가 옵션 <span style="font-weight:400;color:#6b7280;font-size:11px">(같은 모델끼리 공유됩니다)</span></b>
+        <button type="button" class="btn btn-secondary btn-sm" id="fhkV249AddOpt">+ 옵션 추가</button>
+      </div>
+      <div id="fhkV249OptList"></div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">예) "수신기 추가" 10,000원 · 하루당 체크 시 대여일수만큼 곱해집니다.</div>`;
+    body.appendChild(sec);
+    $('fhkV249AddOpt').onclick = ()=>{ draftOptions.push({name:'', price:0, perDay:false}); renderOptionEditor(); };
+  }
+
+  function loadDraftForCurrentModel(){
+    ensureOptionEditor();
+    const nameInput = $('eqName');
+    const model = nameInput ? nameInput.value : '';
+    draftOptions = JSON.parse(JSON.stringify(optionsForModel(model)));
+    renderOptionEditor();
+  }
+
+  // 장비 모달 열릴 때 옵션 로드 (모델명이 나중에 채워질 수 있어 몇 번 재시도)
+  (function watchEquipmentModal(){
+    const modal = $('equipmentModal');
+    if(!modal || !('MutationObserver' in window)) return;
+    new MutationObserver(()=>{
+      if(modal.classList.contains('active')){
+        [0,80,200].forEach(t=>setTimeout(loadDraftForCurrentModel, t));
+      }
+    }).observe(modal, {attributes:true, attributeFilter:['class']});
+  })();
+
+  // 저장 시 옵션도 함께 저장
+  (function wrapSaveEquipment(){
+    const prev = window.saveEquipment;
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(){
+      const model = ($('eqName')||{}).value || '';
+      const cleaned = draftOptions.map(o=>({name:N(o.name), price:Number(o.price)||0, perDay:!!o.perDay})).filter(o=>o.name);
+      const r = prev.apply(this, arguments);
+      const persist = ()=>{ try{ setOptionsForModel(model, cleaned); saveNow(); }catch(_){} };
+      if(r && typeof r.then==='function') r.then(()=>setTimeout(persist,60));
+      else setTimeout(persist, 80);
+      return r;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.saveEquipment = wrapped;
+    try{ saveEquipment = wrapped; }catch(_){}
+  })();
+
+  /* ---------- (3) 예약 모달: 선택된 장비 아래에 옵션 선택 UI ---------- */
+  function currentBookingId(){ return ($('bkId')||{}).value || ''; }
+  function draftSelections(){
+    window.__fhkV249Draft = window.__fhkV249Draft || {};
+    return window.__fhkV249Draft;
+  }
+  function selectedEquipmentIds(){
+    try{ if(Array.isArray(window.chooserSelection)) return window.chooserSelection; }catch(_){}
+    return [];
+  }
+
+  function renderBookingAddons(){
+    const host = $('selectedEquipments');
+    if(!host) return;
+    const ids = selectedEquipmentIds();
+    // 옵션이 있는 장비만 대상
+    const targets = ids.map(id=>({id, e:eqOf(id)})).filter(x=>x.e && optionsForModel(x.e.name).length);
+    let sec = $('fhkV249BookingAddons');
+    if(!targets.length){ if(sec) sec.remove(); return; }
+    if(!sec){
+      sec = document.createElement('div');
+      sec.id = 'fhkV249BookingAddons';
+      sec.style.cssText = 'margin-top:12px;padding-top:12px;border-top:1px solid #2a2d35';
+      host.parentNode.insertBefore(sec, host.nextSibling);
+    }
+    const sel = draftSelections();
+    sec.innerHTML = `<b style="font-size:13px;display:block;margin-bottom:8px">추가 옵션</b>` +
+      targets.map(({id,e})=>{
+        const opts = optionsForModel(e.name);
+        return `<div style="margin-bottom:10px">
+          <div style="font-size:12px;color:#9ca3af;margin-bottom:4px">${H(e.name)}${e.serial?` <span style="color:#6b7280">#${H(e.serial)}</span>`:''}</div>
+          ${opts.map(o=>{
+            const qty = Number((sel[id]||{})[o.name])||0;
+            return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+              <span style="flex:1;min-width:120px;font-size:13px">${H(o.name)} <span style="color:#6b7280;font-size:11px">${H(money(o.price))}${o.perDay?' /일':''}</span></span>
+              <input type="number" min="0" step="1" value="${qty}" data-eq="${H(id)}" data-opt="${H(o.name)}" class="fhk-v249-qty" style="width:70px">
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('');
+    sec.querySelectorAll('.fhk-v249-qty').forEach(inp=>{
+      inp.addEventListener('input', ()=>{
+        const eid = inp.getAttribute('data-eq');
+        const opt = inp.getAttribute('data-opt');
+        const q = Math.max(0, Number(inp.value)||0);
+        const s = draftSelections();
+        s[eid] = s[eid] || {};
+        if(q>0) s[eid][opt] = q; else delete s[eid][opt];
+        if(!Object.keys(s[eid]).length) delete s[eid];
+        try{ if(typeof updateBookingPreview==='function') updateBookingPreview(); }catch(_){}
+      });
+    });
+  }
+
+  // 선택 장비가 다시 그려질 때마다 옵션 UI 갱신
+  (function wrapRenderSelected(){
+    const prev = window.renderSelectedEquipments;
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(){
+      const r = prev.apply(this, arguments);
+      setTimeout(renderBookingAddons, 0);
+      return r;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.renderSelectedEquipments = wrapped;
+    try{ renderSelectedEquipments = wrapped; }catch(_){}
+  })();
+
+  // 예약 열 때: 저장된 선택을 draft 로 복원 / 신규면 초기화
+  (function wrapOpenBooking(){
+    const prev = window.openBookingModal;
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(id){
+      if(!id){ window.__fhkV249Draft = {}; }
+      else {
+        const b = (S().bookings||[]).find(x=>x && x.id===id);
+        window.__fhkV249Draft = b && b.addonSelections ? JSON.parse(JSON.stringify(b.addonSelections)) : {};
+      }
+      const r = prev.apply(this, arguments);
+      [80,250].forEach(t=>setTimeout(renderBookingAddons, t));
+      return r;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.openBookingModal = wrapped;
+    try{ openBookingModal = wrapped; }catch(_){}
+  })();
+
+  // 예약 저장 시 선택 반영
+  (function wrapSaveBooking(){
+    const prev = window.saveBooking;
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(){
+      const editingId = currentBookingId();
+      const snapshot = JSON.parse(JSON.stringify(draftSelections()));
+      const before = new Set((S().bookings||[]).map(b=>b.id));
+      const r = prev.apply(this, arguments);
+      const persist = ()=>{
+        try{
+          const st = S();
+          const target = editingId
+            ? (st.bookings||[]).find(b=>b.id===editingId)
+            : (st.bookings||[]).slice().reverse().find(b=>!before.has(b.id));
+          if(target){
+            // 현재 예약에 실제로 담긴 장비의 선택만 저장
+            const ids = new Set(target.equipmentIds||[]);
+            const out = {};
+            Object.keys(snapshot).forEach(eid=>{ if(ids.has(eid) && Object.keys(snapshot[eid]||{}).length) out[eid]=snapshot[eid]; });
+            if(Object.keys(out).length) target.addonSelections = out; else delete target.addonSelections;
+            saveNow();
+          }
+        }catch(_){}
+      };
+      if(r && typeof r.then==='function') r.then(()=>setTimeout(persist,80));
+      else setTimeout(persist, 100);
+      return r;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.saveBooking = wrapped;
+    try{ saveBooking = wrapped; }catch(_){}
+  })();
+
+  /* ---------- (4) 견적서에 추가 옵션 행 표시 ---------- */
+  function injectQuoteAddons(){
+    try{
+      const qc = $('quoteContent'); if(!qc) return;
+      const bid = window.__fhkQuoteRenderedBookingId;
+      if(!bid) return;
+      const b = (S().bookings||[]).find(x=>x && x.id===bid);
+      if(!b) return;
+      const sel = selectionsOf(b);
+      if(!Object.keys(sel).length) return;
+      const table = [...qc.querySelectorAll('table')].find(t=>[...t.querySelectorAll('th')].some(x=>x.textContent.includes('품')));
+      if(!table) return;
+      const tbody = table.querySelector('tbody'); if(!tbody) return;
+      if(tbody.querySelector('.fhk-v249-addon-row')) return; // 중복 방지
+      let p = {}; try{ p = priceBreakdown(b) || {}; }catch(_){}
+      const days = Number(p.days)||1;
+      // 빈 행이 있으면 그 자리에 채워 넣는다
+      const rows = [];
+      Object.keys(sel).forEach(eid=>{
+        const e = eqOf(eid); if(!e) return;
+        const opts = optionsForModel(e.name);
+        Object.keys(sel[eid]||{}).forEach(optName=>{
+          const qty = Number(sel[eid][optName])||0; if(qty<=0) return;
+          const opt = opts.find(o=>N(o.name)===N(optName)); if(!opt) return;
+          const unit = Number(opt.price)||0;
+          const amount = opt.perDay ? unit*qty*days : unit*qty;
+          rows.push({label:`${e.name} · ${opt.name}`, qty, days: opt.perDay?days:1, unit, amount});
+        });
+      });
+      if(!rows.length) return;
+      const emptyRows = [...tbody.querySelectorAll('tr')].filter(tr=>{
+        const t = tr.textContent.replace(/\s/g,'');
+        return /^\d+$/.test(t); // 번호만 있는 빈 행
+      });
+      rows.forEach((r,i)=>{
+        const html = `<td class="item-name" colspan="4">${H(r.label)}</td><td>추가옵션</td><td>${r.qty}</td><td>${r.days}</td><td class="num">${H(money(r.unit))}</td><td class="num">${H(money(r.amount))}</td><td class="note" colspan="2"></td>`;
+        if(emptyRows[i]){
+          const tr = emptyRows[i];
+          const no = tr.cells[0] ? tr.cells[0].textContent : '';
+          tr.className = 'fhk-v249-addon-row';
+          tr.innerHTML = `<td>${H(no)}</td>` + html;
+        }else{
+          const tr = document.createElement('tr');
+          tr.className = 'fhk-v249-addon-row';
+          tr.innerHTML = `<td></td>` + html;
+          tbody.appendChild(tr);
+        }
+      });
+    }catch(_){}
+  }
+  (function wrapRenderQuote(){
+    const prev = window.renderQuote;
+    if(typeof prev!=='function' || prev.__fhkV249Wrapped) return;
+    const wrapped = function(){
+      const r = prev.apply(this, arguments);
+      [0,120,400].forEach(t=>setTimeout(injectQuoteAddons, t));
+      return r;
+    };
+    wrapped.__fhkV249Wrapped = true;
+    window.renderQuote = wrapped;
+    try{ renderQuote = wrapped; }catch(_){}
+  })();
 })();
 </script>
 
