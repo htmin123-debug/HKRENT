@@ -14019,7 +14019,18 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   }
   function reqFor(ownerId,slot){
     const d=slotDefs(ownerId).find(s=>s.name===slot);
-    return d?Number(d.required)||1:9999;
+    const base = d?Number(d.required)||1:9999;
+    // [버그수정] v242 로 이 예약에서 슬롯 수량을 조정했다면 그 값을 필요수량으로 쓴다.
+    // (안 그러면 3->4 로 늘려 4개를 골라도 원래 3개로 잘려버린다)
+    try{
+      const adj=(window.__fhkBasicSlotAdjust||{})[ownerId];
+      const a=adj && (adj[slot]!==undefined?adj[slot]:undefined);
+      if(a){
+        if(a.excluded) return 0;
+        if(a.qty!=null) return Number(a.qty)||0;
+      }
+    }catch(_){}
+    return base;
   }
 
   function normMap(map){
@@ -14454,7 +14465,18 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   }
   function reqFor(ownerId,slot){
     const d=slotDefs(ownerId).find(s=>s.name===slot);
-    return d?Number(d.required)||1:9999;
+    const base = d?Number(d.required)||1:9999;
+    // [버그수정] v242 로 이 예약에서 슬롯 수량을 조정했다면 그 값을 필요수량으로 쓴다.
+    // (안 그러면 3->4 로 늘려 4개를 골라도 원래 3개로 잘려버린다)
+    try{
+      const adj=(window.__fhkBasicSlotAdjust||{})[ownerId];
+      const a=adj && (adj[slot]!==undefined?adj[slot]:undefined);
+      if(a){
+        if(a.excluded) return 0;
+        if(a.qty!=null) return Number(a.qty)||0;
+      }
+    }catch(_){}
+    return base;
   }
 
   function normMap(map){
@@ -18790,7 +18812,7 @@ else{bump();injectGroupCard();}
      document.title / header h1 을 자기 버전으로 덮어써서 깜빡임이 생긴다.
      아래 가드가 표기를 단일 최신값으로 "항상" 되돌려 깜빡임을 없앤다.
      버전 문자열만 바꾸고 싶으면 DISPLAY_VERSION 값만 수정하면 된다. */
-  const DISPLAY_VERSION = 'v265';
+  const DISPLAY_VERSION = 'v266';
   const TITLE_TEXT  = 'FILM HK RENTAL 관리자 ' + DISPLAY_VERSION;
   const HEADER_TEXT = 'FILM HK RENTAL · 관리자 ' + DISPLAY_VERSION;
   let __printing = false;   // 인쇄 중에는 PDF 파일명 로직을 방해하지 않는다
