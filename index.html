@@ -1882,7 +1882,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       .fhk-contract .fhk-items td{text-align:center;}
       .fhk-contract .fhk-items td.item-name{text-align:left;font-weight:700;}
       .fhk-contract .fhk-items td.note{text-align:left;font-size:11px;color:#333;}
-      .fhk-contract .num{text-align:right!important;font-variant-numeric:tabular-nums;}
+      .fhk-contract .num{text-align:left!important;font-variant-numeric:tabular-nums;}
       .fhk-contract .fhk-summary td,.fhk-contract .fhk-summary th{height:30px;}
       .fhk-contract .fhk-summary .total-label,.fhk-contract .fhk-summary .total-value{background:#f8fafc;font-weight:900;font-size:14px;}
       .fhk-contract .fhk-notes{border:1px solid #222;padding:10px 12px;font-size:11.5px;line-height:1.65;margin-top:9px;background:#fff;}
@@ -3106,7 +3106,7 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
       .fhk-contract.v25 .fhk-items td{text-align:center;}
       .fhk-contract.v25 .fhk-items td.item-name{text-align:left;font-weight:700;}
       .fhk-contract.v25 .fhk-items td.note{text-align:left;font-size:10.5px;color:#333;line-height:1.32;}
-      .fhk-contract.v25 .num{text-align:right!important;font-variant-numeric:tabular-nums;}
+      .fhk-contract.v25 .num{text-align:left!important;font-variant-numeric:tabular-nums;}
       .fhk-contract.v25 .fhk-summary .total-label,.fhk-contract.v25 .fhk-summary .total-value{background:#f8fafc;font-weight:900;font-size:14px;}
       .fhk-contract.v25 .fhk-check{min-height:45px;white-space:pre-line;}
       .fhk-contract.v25 .fhk-terms{border:1px solid #222;margin-top:9px;padding:10px 12px;background:#fff;font-size:11.2px;line-height:1.55;}
@@ -12882,18 +12882,33 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
   function _eqById(id){return (S().equipment||[]).find(function(x){return x.id===id;});}
 
   function _collectBasicByCats(b,cats){
-    var catSet=new Set((cats||[]).map(function(c){return String(c||'').trim().toLowerCase();}));
-    var cnt={};
+    /* v266-fix: 견적서 부속품 체크 집계 통합
+       - 기본구성품뿐 아니라 세트 구성품/직접 선택 장비도 함께 확인
+       - 이름 부분일치가 아니라 장비의 실제 카테고리를 정확히 일치시켜
+         "V마운트 배터리" 그룹에 "V마운트 배터리 차저"가 중복되는 오류 방지 */
+    var norm=function(v){return String(v||'').normalize('NFC').trim().toLowerCase();};
+    var catSet=new Set((cats||[]).map(norm).filter(Boolean));
+    var ids=[];
+    var push=function(id){if(typeof id==='string'&&id&&!ids.includes(id))ids.push(id);};
+
     Object.values(b.basicCompSelections||{}).forEach(function(slotMap){
-      if(!slotMap) return;
-      Object.values(slotMap).forEach(function(arr){
-        if(!Array.isArray(arr)) return;
-        arr.forEach(function(id){
-          var e=_eqById(id); if(!e) return;
-          if(catSet.size>0&&!catSet.has(String(e.category||'').trim().toLowerCase())) return;
-          cnt[e.name]=(cnt[e.name]||0)+1;
-        });
+      Object.values(slotMap||{}).forEach(function(arr){
+        (Array.isArray(arr)?arr:Object.values(arr||{})).forEach(push);
       });
+    });
+    Object.values(b.setComponentGroups||{}).forEach(function(groupMap){
+      (Array.isArray(groupMap)?groupMap:Object.values(groupMap||{}).flat()).forEach(push);
+    });
+    Object.values(b.setComponents||{}).forEach(function(arr){
+      (Array.isArray(arr)?arr:Object.values(arr||{}).flat()).forEach(push);
+    });
+    (b.equipmentIds||[]).forEach(push);
+
+    var cnt={};
+    ids.forEach(function(id){
+      var e=_eqById(id); if(!e) return;
+      if(catSet.size>0&&!catSet.has(norm(e.category))) return;
+      cnt[e.name]=(cnt[e.name]||0)+1;
     });
     return cnt;
   }
@@ -12921,7 +12936,9 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
     if(!b) return;
     var txt=_buildAccCheckText(b);
     var td=qc.querySelector('td.fhk-check'); if(!td) return;
-    if(txt) td.innerHTML=txt.replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];}).replace(/\n/g,'<br>');
+    td.innerHTML=txt
+      ? txt.replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];}).replace(/\n/g,'<br>')
+      : '현장에서 구성품 확인 후 기재';
   }
 
   /* ══════════════════════════════════════════════════════
@@ -12981,6 +12998,16 @@ function init(){document.getElementById('todayText').textContent=new Date().toLo
     return r;
   };
   try{renderQuotes=window.renderQuotes;}catch(_){}
+
+  /* v266-fix: 긴 부속품 목록이 표 폭/높이를 과도하게 밀지 않도록 정상 줄바꿈 */
+  try{
+    if(!document.getElementById('fhk-v266-quote-accessory-fix-style')){
+      var accStyle=document.createElement('style');
+      accStyle.id='fhk-v266-quote-accessory-fix-style';
+      accStyle.textContent='.fhk-contract .fhk-check{white-space:normal!important;overflow-wrap:anywhere;word-break:keep-all;line-height:1.45}.fhk-contract .fhk-check br{display:block;content:"";margin-top:2px}';
+      document.head.appendChild(accStyle);
+    }
+  }catch(_){}
 
   /* ══════════════════════════════════════════════════════
      FIX 1: 장비관리 모델카드 드래그 복구
@@ -21532,5 +21559,96 @@ else{bump();injectGroupCard();}
 })();
 </script>
 
+
+
+<!-- v267: 견적서 부속품 체크 행 colspan/폭 최종 보정 -->
+<style id="fhk-v267-quote-accessory-layout-style">
+  #quoteContent tr.fhk-v267-accessory-row > th{
+    width:120px!important;
+    min-width:120px!important;
+    max-width:120px!important;
+    vertical-align:middle!important;
+  }
+  #quoteContent tr.fhk-v267-accessory-row > td.fhk-check{
+    width:auto!important;
+    max-width:none!important;
+    white-space:normal!important;
+    overflow-wrap:anywhere!important;
+    word-break:keep-all!important;
+    line-height:1.55!important;
+    vertical-align:top!important;
+    padding:10px 12px!important;
+  }
+  #quoteContent tr.fhk-v267-accessory-row .fhk-v206-line,
+  #quoteContent tr.fhk-v267-accessory-row > td.fhk-check > span{
+    display:block!important;
+    margin:1px 0!important;
+  }
+</style>
+<script id="fhk-v267-quote-accessory-layout-script">
+(function(){
+  if(window.__fhkV267QuoteAccessoryLayout) return;
+  window.__fhkV267QuoteAccessoryLayout=true;
+
+  function norm(v){return String(v||'').replace(/\s+/g,' ').trim();}
+  function logicalCols(tr){
+    return Array.from(tr.cells||[]).reduce(function(sum,c){
+      return sum + Math.max(1, Number(c.colSpan)||1);
+    },0);
+  }
+  function tableColumnCount(table){
+    var max=0;
+    Array.from(table.rows||[]).forEach(function(tr){max=Math.max(max,logicalCols(tr));});
+    return Math.max(2,max);
+  }
+  function fix(){
+    var root=document.getElementById('quoteContent');
+    if(!root) return;
+    Array.from(root.querySelectorAll('tr')).forEach(function(tr){
+      if(!tr.cells||!tr.cells.length) return;
+      var first=norm(tr.cells[0].textContent);
+      if(!/^부속품\s*체크$/.test(first)) return;
+      var table=tr.closest('table');
+      if(!table) return;
+      var total=tableColumnCount(table);
+      var th=tr.cells[0];
+      var td=tr.querySelector('td.fhk-check') || tr.cells[1];
+      if(!td){td=document.createElement('td');tr.appendChild(td);}
+      // 잘못 남은 3번째 이후 셀은 제거하고, 내용 셀이 표의 나머지 전 열을 차지하게 한다.
+      while(tr.cells.length>2) tr.deleteCell(2);
+      th.colSpan=1;
+      td.colSpan=Math.max(1,total-1);
+      td.classList.add('fhk-check');
+      tr.classList.add('fhk-v267-accessory-row');
+    });
+  }
+  var oldRenderQuote=window.renderQuote;
+  if(typeof oldRenderQuote==='function'){
+    window.renderQuote=function(){
+      var r=oldRenderQuote.apply(this,arguments);
+      setTimeout(fix,0); setTimeout(fix,30); setTimeout(fix,120);
+      return r;
+    };
+  }
+  var root=document.getElementById('quoteContent');
+  if(root){
+    new MutationObserver(function(){fix();}).observe(root,{childList:true,subtree:true});
+  }
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(fix,0);});
+  setTimeout(fix,0);
+})();
+</script>
+
+
+<!-- v268: 견적서 부속품 체크 내용 우측 정렬 -->
+<style id="fhk-v269-quote-accessory-left-align-style">
+  #quoteContent tr.fhk-v267-accessory-row > td.fhk-check{
+    text-align:left!important;
+  }
+  #quoteContent tr.fhk-v267-accessory-row .fhk-v206-line,
+  #quoteContent tr.fhk-v267-accessory-row > td.fhk-check > span{
+    text-align:left!important;
+  }
+</style>
 </body>
 </html>
