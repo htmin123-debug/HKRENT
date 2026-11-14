@@ -78,6 +78,17 @@ h1{font-size:24px;font-weight:900;letter-spacing:-.02em;margin:22px 0 6px}
 .done h2{font-size:21px;font-weight:900;margin:0 0 8px}
 .done p{color:var(--sub);font-size:14px;line-height:1.7;margin:0 0 18px}
 .ghost{height:46px;padding:0 18px;border-radius:13px;border:1px solid var(--line);background:#fff;font-weight:800;cursor:pointer}
+html.embed header .in{padding-right:64px}
+.notice{display:none;margin:16px 0 0;padding:14px;border-radius:16px;background:#141416;color:#fff}
+.notice.on{display:block}
+.notice b{display:block;font-size:15px;font-weight:900;margin-bottom:3px}
+.notice span{display:block;font-size:13px;color:#C9CED6}
+.notice .btns{display:flex;gap:8px;margin-top:12px}
+.notice .btns button{flex:1;height:44px;border-radius:12px;border:0;font-weight:900;font-size:14px;cursor:pointer}
+.notice .more{background:#2A2C33;color:#fff}
+.notice .go{background:var(--acc);color:var(--acc-ink)}
+.notice.warn{background:#FFF4E5;color:#7A4A00}
+.notice.warn span{color:#8A5A10}
 footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);font-size:12px;line-height:1.7}
 @media (max-width:420px){.dates{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
 </style>
@@ -86,6 +97,7 @@ footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);
 <header><div class="in"><div class="logo">HK</div><div class="brand"><b>FILM HK RENTAL</b><span>견적 장바구니</span></div></div></header>
 
 <main class="wrap" id="app">
+  <div class="notice" id="notice" role="status" aria-live="polite"></div>
   <h1>필요한 장비를 담아 주세요</h1>
   <p class="lead">대여 날짜와 장비를 골라 신청하시면, 일정을 확인한 뒤 <b>가능 여부와 최종 견적</b>을 연락드려요. 신청만으로는 예약이 확정되지 않아요.</p>
 
@@ -130,10 +142,14 @@ footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);
   const SUPABASE_KEY='sb_publishable_CGDh6TxaWKvUjx4inv2LmA_BK4cWR_W';
   const CATALOG_ID='filmhk-catalog-v1';
   const CART_KEY='fhk_quote_cart_v1';
+  const MAXQ=20;   // 손님에게는 대수를 알려 주지 않음 — 몇 대든 신청 가능, 가능 여부는 관리자가 판단
   const $=id=>document.getElementById(id);
   const H=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const won=n=>(Math.round(n)||0).toLocaleString('ko-KR')+'원';
   const WD=['일','월','화','수','목','금','토'];
+  const EMBED=/[?&]embed=1/.test(location.search)&&window.parent!==window;
+  if(EMBED) document.documentElement.classList.add('embed');
+  const closePopup=()=>{ if(EMBED){ try{ window.parent.postMessage({type:'fhk-quote-close'},'*'); }catch(_){} } };
   let client=null; try{ client=window.supabase&&window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:false,autoRefreshToken:false}}); }catch(_){}
 
   let catalog=null, cat='전체', query='';
@@ -180,19 +196,19 @@ footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);
     const groups=catalog.categories.filter(c=>cat==='전체'||c.name===cat).map(c=>({name:c.name,models:c.models.filter(m=>!query||m.name.toLowerCase().includes(query))})).filter(g=>g.models.length);
     if(!groups.length){ box.innerHTML='<div class="empty">찾는 장비가 없어요. 요청사항에 적어 주시면 확인해 드릴게요.</div>'; return; }
     box.innerHTML=groups.map(g=>`<div class="cat">${H(g.name)}</div>`+g.models.map(m=>{
-      const k=keyOf({category:g.name,name:m.name}); const q=cart[k]?cart[k].qty:0; const max=Math.max(1,m.count||1);
+      const k=keyOf({category:g.name,name:m.name}); const q=cart[k]?cart[k].qty:0; const max=MAXQ;
       const ctl=q?`<div class="qty"><button type="button" data-k="${H(k)}" data-d="-1" aria-label="${H(m.name)} 빼기">−</button><output aria-live="polite">${q}</output><button type="button" data-k="${H(k)}" data-d="1" aria-label="${H(m.name)} 더하기" ${q>=max?'disabled':''}>+</button></div>`
                   :`<button type="button" class="add" data-k="${H(k)}" data-d="1">담기</button>`;
-      return `<div class="item"><div class="nm"><b>${H(m.name)}</b><span>${m.price?`하루 ${won(m.price)}`:'가격 문의'}${max>1?` · 보유 ${max}대`:''}</span></div>${ctl}</div>`;
+      return `<div class="item"><div class="nm"><b>${H(m.name)}</b><span>${m.price?`하루 ${won(m.price)}`:'가격 문의'}</span></div>${ctl}</div>`;
     }).join('')).join('');
   }
   $('list').addEventListener('click',e=>{
     const b=e.target.closest('[data-k]'); if(!b) return;
     const k=b.dataset.k, d=Number(b.dataset.d);
     const m=allModels().find(x=>keyOf(x)===k); if(!m) return;
-    const cur=cart[k]?cart[k].qty:0; const nq=Math.max(0,Math.min(Math.max(1,m.count||1),cur+d));
+    const cur=cart[k]?cart[k].qty:0; const nq=Math.max(0,Math.min(MAXQ,cur+d));
     if(nq) cart[k]={category:m.category,model:m.name,price:m.price||0,qty:nq}; else delete cart[k];
-    saveCart(); renderList(); renderBar();
+    saveCart(); renderList(); renderBar(); if($('notice').classList.contains('on')&&!missing.length){ justAdded=[]; showNotice(); }
   });
 
   /* ---------- 아래 줄 · 장바구니 ---------- */
@@ -278,7 +294,7 @@ footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);
       $('cartBody').innerHTML=`<div class="done"><div class="big"><svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
         <h2>신청을 받았어요</h2><p>${H(fmt(row.start_date,row.start_time))} → ${H(fmt(row.end_date,row.end_time))}<br>장비 ${t.count}개 · 예상 ${won(t.sum)}<br><br>일정을 확인한 뒤 <b>${H(phone)}</b>로 가능 여부와 최종 견적을 연락드릴게요.</p>
         <button class="ghost" type="button" id="fClose">닫기</button></div>`;
-      $('fClose').onclick=()=>closeCart();
+      $('fClose').onclick=()=>{ closeCart(); closePopup(); };
       renderList(); renderBar();
     }catch(e){
       err.textContent='신청을 보내지 못했어요. 잠시 뒤 다시 시도하시거나 전화로 문의해 주세요.';
@@ -295,11 +311,57 @@ footer{max-width:720px;margin:10px auto 0;padding:0 16px 20px;color:var(--mute);
       if(!data||!data.data||!Array.isArray(data.data.categories)) throw new Error('empty');
       catalog=data.data;
       if(catalog.info) $('foot').innerHTML=H(catalog.info);
-      renderChips(); renderList(); renderBar();
+      applyAddLinks(); renderChips(); renderList(); renderBar(); showNotice();
     }catch(e){
       $('list').innerHTML='<div class="empty">장비 목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.</div>';
     }
   }
+  /* ---------- 홈페이지 '담기' 링크: quote.html?add=모델이름 ---------- */
+  let justAdded=[], missing=[];
+  function applyAddLinks(){
+    const ps=new URLSearchParams(location.search); const adds=ps.getAll('add').map(s=>s.trim()).filter(Boolean);
+    if(!adds.length) return;
+    const qty=Math.max(1,Math.min(MAXQ,parseInt(ps.get('qty')||'1',10)||1));
+    const cat=(ps.get('cat')||'').trim();
+    const models=allModels();
+    const norm=s=>s.toLowerCase().replace(/\s+/g,'');
+    adds.forEach(name=>{
+      const m=models.find(x=>norm(x.name)===norm(name)&&(!cat||x.category===cat))||models.find(x=>norm(x.name)===norm(name));
+      if(!m){ missing.push(name); return; }
+      const k=keyOf(m); const cur=cart[k]?cart[k].qty:0;
+      cart[k]={category:m.category,model:m.name,price:m.price||0,qty:Math.min(MAXQ,cur+qty)};
+      justAdded.push(m.name);
+    });
+    saveCart();
+    // 새로고침해도 또 담기지 않게 주소에서 add 를 지움
+    try{ ps.delete('add'); ps.delete('qty'); ps.delete('cat'); const s=ps.toString(); history.replaceState(history.state,'',location.pathname+(s?'?'+s:'')+location.hash); }catch(_){}
+  }
+  function browseMore(){
+    if(EMBED){ closePopup(); return; }
+    if(history.length>1){ history.back(); return; }
+    try{ window.close(); }catch(_){}
+    setTimeout(()=>{ if(document.referrer) location.href=document.referrer; },300);
+  }
+  function showNotice(){
+    const n=$('notice'); const t=totals();
+    let title='', sub='';
+    if(justAdded.length){ title=`✓ 장바구니에 담았어요 · ${justAdded.join(', ')}`; sub=`지금 담은 장비 ${t.count}개 · 예상 ${won(t.sum)}`; }
+    else if(t.count){ title=`담은 장비 ${t.count}개`; sub=`${t.items.slice(0,3).map(i=>i.model+(i.qty>1?' ×'+i.qty:'')).join(', ')}${t.items.length>3?' 외':''} · 예상 ${won(t.sum)}`; }
+    if(missing.length){
+      n.className='notice warn on';
+      n.innerHTML=`<b>'${H(missing.join(', '))}'은(는) 지금 목록에 없어요</b><span>아래에서 비슷한 장비를 고르시거나, 신청할 때 요청사항에 적어 주세요.</span>`;
+      if(!title) return;
+      n.insertAdjacentHTML('beforeend',`<span style="margin-top:8px;font-weight:800">${H(title)}</span>`);
+      return;
+    }
+    if(!title){ n.className='notice'; n.innerHTML=''; return; }
+    n.className='notice on';
+    n.innerHTML=`<b>${H(title)}</b><span>${H(sub)}</span><div class="btns"><button type="button" class="more" id="nMore">더 둘러보기</button><button type="button" class="go" id="nGo">견적 신청하기</button></div>`;
+    $('nMore').onclick=browseMore;
+    $('nGo').onclick=()=>{ if(totals().count) openCart(); };
+  }
+  window.addEventListener('pageshow',e=>{ if(e.persisted){ try{ cart=JSON.parse(localStorage.getItem(CART_KEY)||'{}')||{}; }catch(_){} justAdded=[]; missing=[]; renderList(); renderBar(); showNotice(); } });
+
   renderDates(); load();
 })();
 </script>
