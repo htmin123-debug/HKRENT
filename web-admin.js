@@ -39,23 +39,24 @@
   .fhkw-btn.ghost{background:#fff;color:#111}
   .fhkw-pv small{display:block;margin-bottom:8px;color:#888;font-size:12px;letter-spacing:.06em}
   .fhkw-off{opacity:.35}
-  /* 렌탈 홈페이지 카드와 같은 모양 */
-  .fhkw-card{font-family:'Archivo','Noto Sans KR',sans-serif;max-width:320px}
-  .fhkw-card .t{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;min-height:2.6em;padding-bottom:8px;border-bottom:1px solid #111}
-  .fhkw-card .n{font-weight:800;font-size:16px;line-height:1.25;letter-spacing:-.02em}
-  .fhkw-card .bd{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
-  .fhkw-card .rb{font-weight:800;font-size:11px;letter-spacing:.06em;color:#fff;background:#111;padding:5px 8px}
-  .fhkw-card .rb.set{background:#FF4A12}
-  .fhkw-card .rb.tag{background:none;color:#FF4A12;box-shadow:inset 0 0 0 1px #FF4A12;letter-spacing:0}
-  .fhkw-card .pic{aspect-ratio:4/3;background:#F3F2F0;display:grid;place-items:center;overflow:hidden;position:relative}
-  .fhkw-card .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:6%}
-  .fhkw-card .pic svg{width:70%;height:70%}
-  .fhkw-card .was{display:flex;gap:8px;align-items:baseline;min-height:30px;padding:8px 0 2px;font-weight:600;font-size:15px;color:#6b6b6b}
-  .fhkw-card .was s{text-decoration-color:#FF4A12;text-decoration-thickness:2px}
-  .fhkw-card .was em{font-style:normal;font-weight:800;font-size:12px;color:#FF4A12}
-  .fhkw-card .now{display:flex;align-items:baseline;justify-content:space-between;background:#111;color:#fff;padding:10px 12px}
-  .fhkw-card .now b{font-weight:900;font-size:28px;letter-spacing:-.03em}
-  .fhkw-card .now i{font-style:normal;font-weight:800;font-size:13px}
+  /* 렌탈 홈페이지 카드와 같은 모양 (예전 FILM HK RENTAL 카드: 정사각형 · 남색 이름 · SET 빨강/단품 남색 · 줄 그은 정가 · 검은 가격 띠) */
+  .fhkw-card{container-type:inline-size;width:100%;max-width:320px;aspect-ratio:1/1;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;background:#F2F2F2;overflow:hidden;font-family:'Archivo','Noto Sans KR',sans-serif}
+  .fhkw-card .t{display:flex;justify-content:space-between;align-items:center;gap:3cqw;padding:4.5cqw 4cqw 0}
+  .fhkw-card .n{font-weight:800;font-size:6.2cqw;line-height:1.15;letter-spacing:-.02em;color:#1D3A8F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fhkw-card .bd{display:flex;align-items:center;gap:1.5cqw}
+  .fhkw-card .rb{font-weight:900;font-size:5cqw;line-height:1;letter-spacing:.04em;color:#fff;background:#1D3A8F;padding:1.6cqw 3.6cqw;min-width:22cqw;text-align:center}
+  .fhkw-card .rb.set,.fhkw-card .rb.tag{background:#E0362B}
+  .fhkw-card .rb.tag{letter-spacing:0;min-width:0}
+  .fhkw-card .pic{min-height:0;margin:1cqw 3cqw 0;display:grid;place-items:center;position:relative;overflow:hidden}
+  .fhkw-card .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .fhkw-card .pic svg{width:62%;height:62%}
+  .fhkw-card .was{height:8.4cqw;padding:0 4cqw;display:flex;align-items:center;font-weight:800;font-size:6.4cqw;color:#1D3A8F}
+  .fhkw-card .was s{text-decoration:none;position:relative;padding:0 1cqw}
+  .fhkw-card .was s::after{content:"";position:absolute;left:-1cqw;right:-1cqw;top:52%;height:.9cqw;min-height:2px;background:#FF4A12}
+  .fhkw-card .was em{display:none}
+  .fhkw-card .now{background:#111;color:#fff;height:19cqw;padding:0 4cqw;display:grid;grid-template-columns:auto 1fr auto;align-items:center}
+  .fhkw-card .now b{font-weight:900;font-size:13cqw;line-height:1;letter-spacing:-.03em;text-align:center}
+  .fhkw-card .now i{font-style:normal;font-weight:900;font-size:5.6cqw}
   .fhkw-dt{margin-top:16px;padding-top:12px;border-top:1px solid #e5e5e5;font-size:13px}
   .fhkw-dt h4{margin:0 0 8px;font-size:17px;line-height:1.3}
   .fhkw-dt ul{margin:0 0 8px;padding:0;list-style:none;border-top:1px solid #eee}
