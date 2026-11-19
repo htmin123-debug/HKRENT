@@ -21,8 +21,9 @@
   .fhkw-hd small{color:#888}
   .fhkw-x{margin-left:auto;border:0;background:none;font-size:26px;line-height:1;cursor:pointer;color:#444}
   .fhkw-body{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:24px;padding:18px}
-  @media(max-width:760px){.fhkw-body{grid-template-columns:1fr}}
-  .fhkw-f{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .fhkw-f label,.fhkw-f input,.fhkw-f textarea{min-width:0;max-width:100%}
+  @media(max-width:760px){.fhkw-body{grid-template-columns:minmax(0,1fr);gap:16px;padding:14px}.fhkw-f{grid-template-columns:minmax(0,1fr)}.fhkw-pv{order:-1}.fhkw-card{max-width:none}.fhkw-dt{display:none}.fhkw-drop{grid-template-columns:96px minmax(0,1fr)}.fhkw-drop .th{width:96px}.fhkw-bg{padding:10px 8px}}
+  .fhkw-f{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;min-width:0}
   .fhkw-f label{display:flex;flex-direction:column;gap:4px;font-weight:700;font-size:13px}
   .fhkw-f .w{grid-column:1/-1}
   .fhkw-f input[type=text],.fhkw-f input:not([type]),.fhkw-f textarea{font:inherit;font-weight:400;border:1px solid #cfcfcf;border-radius:4px;padding:8px 10px;color:#111;background:#fff;min-width:0}
@@ -186,7 +187,7 @@
   .fhkc-hd{display:flex;align-items:baseline;gap:10px;padding:14px 18px;border-bottom:1px solid #e5e5e5}
   .fhkc-hd b{font-size:16px}.fhkc-hd small{color:#888}
   .fhkc-body{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;padding:18px}
-  @media(max-width:760px){.fhkc-body{grid-template-columns:1fr}}
+  @media(max-width:760px){.fhkc-body{grid-template-columns:minmax(0,1fr);padding:12px}.fhkc-bg{padding:8px}.fhkc-side{order:-1}.fhkc-pv{max-width:260px}.fhkc-tip{display:none}}
   .fhkc-wrap{justify-self:center;align-self:start;padding:14px;overflow:hidden;background:#1d1d1f;border-radius:4px}
   .fhkc-stage{position:relative;overflow:visible;background:#F3F2F0 conic-gradient(#e7e7e7 25%,#f6f6f6 0 50%,#e7e7e7 0 75%,#f6f6f6 0) 0 0/16px 16px;touch-action:none;user-select:none;-webkit-user-select:none}
   .fhkc-stage img{display:block;width:100%;height:100%;pointer-events:none}
