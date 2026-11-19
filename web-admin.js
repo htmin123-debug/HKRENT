@@ -1,4 +1,4 @@
-/* FILM HK RENTAL 관리자 — 홈페이지 카드 편집 (v327)
+/* FILM HK RENTAL 관리자 — 홈페이지 카드 편집 (v328: 사진 넣기)
    장비 모델 화면의 '홈페이지 카드' 버튼을 누를 때만 불러오는 파일이에요 (평소 관리자 화면 속도에 영향 없음).
    저장 위치: state.webMeta[모델 이름] = { hidden, featured, list, tags, title, parts, info, image }
    저장하면 공개 장비 목록(public_catalog)에 'web' 으로 실려 렌탈 홈페이지가 읽어요. 사진은 주소만 저장. */
@@ -60,6 +60,24 @@
   .fhkw-dt ul{margin:0 0 8px;padding:0;list-style:none;border-top:1px solid #eee}
   .fhkw-dt li{padding:4px 0;border-bottom:1px solid #eee}
   .fhkw-dt p{margin:0;white-space:pre-line;color:#333}
+  .fhkw-ph{display:flex;flex-direction:column;gap:6px}
+  .fhkw-ph .lb{font-weight:700;font-size:13px}
+  .fhkw-drop{position:relative;display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;padding:12px;border:1.5px dashed #bdbdbd;border-radius:6px;cursor:pointer;background:#fafafa;outline:none;transition:border-color .2s,background .2s}
+  .fhkw-drop:hover,.fhkw-drop:focus-visible,.fhkw-drop.over{border-color:#FF4A12;background:#FFF6F2}
+  .fhkw-drop .th{width:120px;aspect-ratio:4/3;border-radius:4px;background:#F3F2F0 conic-gradient(#e9e9e9 25%,#f7f7f7 0 50%,#e9e9e9 0 75%,#f7f7f7 0) 0 0/14px 14px;display:grid;place-items:center;overflow:hidden}
+  .fhkw-drop .th img{width:100%;height:100%;object-fit:contain}
+  .fhkw-drop .th span{font-size:11px;color:#999}
+  .fhkw-drop p{margin:0;font-size:13px;color:#555;line-height:1.5}
+  .fhkw-drop p b{color:#111}
+  .fhkw-drop.busy::after{content:"처리 중…";position:absolute;inset:0;display:grid;place-items:center;background:rgba(255,255,255,.75);font-weight:700;border-radius:6px}
+  .fhkw-ph-opt{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:13px}
+  .fhkw-f .fhkw-ph-opt label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;font-weight:600;font-size:13px}
+  .fhkw-ph-opt input{width:16px;height:16px;accent-color:#FF4A12}
+  .fhkw-ph-opt button{border:0;background:none;color:#888;text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+  .fhkw-ph-msg{color:#FF4A12}
+  .fhkw-ph-msg.ok{color:#15803d}
+  .fhkw-ph details{font-size:12px;color:#888}
+  .fhkw-ph details input{margin-top:6px;width:100%}
   `;
 
   function modelInfo(model) {
@@ -94,6 +112,74 @@
       <div class="fhkw-dt${w.hidden ? ' fhkw-off' : ''}"><h4>${H(w.title || model)}</h4>${parts.length ? `<ul>${parts.map((p) => `<li>${H(p)}</li>`).join('')}</ul>` : ''}${w.info ? `<p>${H(w.info)}</p>` : ''}</div>`;
   }
 
+  /* ---------- 사진: 흰 배경 지우기 · 빈 공간 잘라내기 · 같은 여백에 맞추기 · 줄이기 → Supabase 사진 보관함 ----------
+     · 사진 테두리에서 이어진 밝은 배경만 지움(흰색 장비 자체는 안 지움) · 배경이 흰색이 아닌 사진은 그대로
+     · 결과는 1200×900(4:3) 투명 바탕, 장비가 가운데 84% 안에 들어가게 · WebP(안 되면 PNG) */
+  const BUCKET = 'rent-gear', OUT_W = 1200, OUT_H = 900, FILL = 0.84;
+  const loadImg = (blob) => new Promise((res, rej) => { const u = URL.createObjectURL(blob); const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('그림 파일이 아니에요')); im.src = u; });
+  const toBlob = (cv, type, q) => new Promise((res) => cv.toBlob(res, type, q));
+  async function processImage(blob, removeBg) {
+    const im = await loadImg(blob);
+    const W0 = im.naturalWidth, H0 = im.naturalHeight;
+    if (!W0 || !H0) throw new Error('그림 크기를 읽지 못했어요');
+    const k = Math.min(1, 2400 / Math.max(W0, H0)), W = Math.max(1, Math.round(W0 * k)), H = Math.max(1, Math.round(H0 * k));
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H), p = d.data;
+    // 배경색 = 테두리 픽셀 평균, 테두리가 고르고 밝으면 '흰 배경'으로 봄
+    const border = []; const step = Math.max(1, Math.floor(Math.min(W, H) / 200));
+    for (let i = 0; i < W; i += step) border.push(i, (H - 1) * W + i);
+    for (let j = 0; j < H; j += step) border.push(j * W, j * W + W - 1);
+    let r = 0, g = 0, b = 0, opaque = 0;
+    border.forEach((q) => { r += p[q * 4]; g += p[q * 4 + 1]; b += p[q * 4 + 2]; if (p[q * 4 + 3] > 200) opaque++; });
+    r /= border.length; g /= border.length; b /= border.length;
+    const dist = (q) => Math.max(Math.abs(p[q * 4] - r), Math.abs(p[q * 4 + 1] - g), Math.abs(p[q * 4 + 2] - b));
+    const near = border.filter((q) => dist(q) <= 24).length / border.length;
+    const alreadyClear = opaque / border.length < 0.5;
+    const light = Math.min(r, g, b) >= 220 && Math.max(r, g, b) - Math.min(r, g, b) <= 22 && near >= 0.85;
+    let removed = false;
+    if (removeBg && light && !alreadyClear) {
+      // 테두리에서 시작해 배경색과 비슷한 픽셀만 따라 들어가며 지움 (가장자리는 부드럽게)
+      const T0 = 10, T1 = 42, seen = new Uint8Array(W * H), q = new Int32Array(W * H); let head = 0, tail = 0;
+      const push = (i) => { if (!seen[i] && dist(i) <= T1) { seen[i] = 1; q[tail++] = i; } };
+      for (let i = 0; i < W; i++) { push(i); push((H - 1) * W + i); }
+      for (let j = 0; j < H; j++) { push(j * W); push(j * W + W - 1); }
+      while (head < tail) {
+        const i = q[head++], dd = dist(i), a = dd <= T0 ? 0 : Math.round(255 * (dd - T0) / (T1 - T0));
+        if (a < p[i * 4 + 3]) p[i * 4 + 3] = a;
+        if (dd > T0 + 6) continue;   // 경계에서는 더 들어가지 않음
+        const xx = i % W;
+        if (xx > 0) push(i - 1); if (xx < W - 1) push(i + 1); if (i >= W) push(i - W); if (i < W * (H - 1)) push(i + W);
+      }
+      x.putImageData(d, 0, 0); removed = true;
+    }
+    // 장비가 있는 영역만 남기기
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    const keep = (i) => removed || alreadyClear ? p[i * 4 + 3] > 18 : (light ? dist(i) > 24 : true);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (keep(j * W + i)) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
+    if (x1 < 0) { x0 = 0; y0 = 0; x1 = W - 1; y1 = H - 1; }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const fill = removed || alreadyClear || light ? FILL : 1;
+    const sc = Math.min(OUT_W * fill / bw, OUT_H * fill / bh);
+    const out = document.createElement('canvas'); out.width = OUT_W; out.height = OUT_H;
+    const o = out.getContext('2d'); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'high';
+    if (!removed && light && !alreadyClear) { o.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`; o.fillRect(0, 0, OUT_W, OUT_H); }
+    o.drawImage(cv, x0, y0, bw, bh, (OUT_W - bw * sc) / 2, (OUT_H - bh * sc) / 2, bw * sc, bh * sc);
+    let outBlob = await toBlob(out, 'image/webp', 0.86);
+    if (!outBlob || outBlob.type !== 'image/webp') outBlob = await toBlob(out, 'image/png');
+    return { blob: outBlob, removed, light, small: sc / k > 2.2, src: [W0, H0] };
+  }
+  async function uploadImage(blob, model) {
+    const c = window.filmhkSupabase;
+    if (!c || !c.storage) throw new Error('관리자 로그인 · 클라우드 연결 뒤에 올릴 수 있어요');
+    const ext = blob.type === 'image/webp' ? 'webp' : 'png';
+    const key = (model.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40) || 'gear') + '-' + Date.now().toString(36);
+    const path = `gear/${key}.${ext}`;
+    const { error } = await c.storage.from(BUCKET).upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false });
+    if (error) throw new Error(/bucket|not found/i.test(error.message || '') ? '사진 보관함(rent-gear)이 아직 없어요. Supabase 에서 설정 SQL 을 먼저 실행해 주세요.' : /row-level|policy|permission|unauthor/i.test(error.message || '') ? '사진을 올릴 권한이 없어요. 로그인 상태와 사진 보관함 설정을 확인해 주세요.' : (error.message || '올리지 못했어요'));
+    return c.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  }
+
   function open(model) {
     model = N(model); if (!model) return;
     if (!document.getElementById('fhkw-css')) { const st = document.createElement('style'); st.id = 'fhkw-css'; st.textContent = CSS; document.head.appendChild(st); }
@@ -111,7 +197,15 @@
           <label class="w">상세 제목<input name="title" value="${H(w0.title || '')}" placeholder="${H(model)}"></label>
           <label class="w">구성 (한 줄에 하나)<textarea name="parts" placeholder="${info.slots.length ? '비우면 세트 구성을 그대로 보여줘요' : '예: 앞뒤 캡 · 후드'}">${H((w0.parts || []).join('\n'))}</textarea></label>
           <label class="w">제품 안내<textarea name="info" placeholder="홈페이지 상세 페이지에 보일 설명">${H(w0.info || '')}</textarea></label>
-          <label class="w">사진 주소<input name="image" value="${H(w0.image || '')}" placeholder="https://… (사진 올리기는 곧 붙여요)"></label>
+          <div class="w fhkw-ph"><span class="lb">사진</span>
+            <div class="fhkw-drop" tabindex="0" role="button" aria-label="사진 넣기: 끌어다 놓기, 눌러서 고르기, 붙여넣기">
+              <div class="th">${w0.image ? `<img src="${H(w0.image)}" alt="">` : '<span>사진 없음</span>'}</div>
+              <p><b>끌어다 놓기 · 붙여넣기(Ctrl+V / ⌘V)</b><br>또는 눌러서 고르기 · 흰 배경은 지우고, 장비 크기를 다른 사진과 같게 맞춰요</p>
+            </div>
+            <div class="fhkw-ph-opt"><label><input type="checkbox" name="rmbg" checked>흰 배경 지우기</label><button type="button" data-a="rmimg">사진 빼기</button><span class="fhkw-ph-msg" role="status"></span></div>
+            <details><summary>사진 주소 직접 넣기</summary><input name="image" value="${H(w0.image || '')}" placeholder="https://…"></details>
+            <input type="file" accept="image/*" hidden>
+          </div>
         </form>
         <div class="fhkw-pv"><small>홈페이지 미리보기</small><div id="fhkw-pv"></div></div>
       </div>
@@ -126,18 +220,53 @@
       if (g('featured').checked) w.featured = true;
       const list = num(g('list').value); if (list) w.list = list;
       const tags = g('tags').value.split(',').map(N).filter(Boolean); if (tags.length) w.tags = tags;
-      ['title', 'info', 'image'].forEach((k) => { const v = N(g(k).value); if (v) w[k] = v; });
+      ['title', 'info', 'image'].forEach((k) => { const v = N(g(k).value); if (v) w[k] = v; });   // 사진은 올리기가 끝난 주소만 저장
       const parts = g('parts').value.split('\n').map(N).filter(Boolean); if (parts.length) w.parts = parts;
       return w;
     };
-    const draw = () => { pv.innerHTML = preview(model, info, val()); };
+    let pending = '', lastSrc = null, busy = false;
+    const draw = () => { const w = val(); if (pending) w.image = pending; pv.innerHTML = preview(model, info, w); };
     f.addEventListener('input', draw); f.addEventListener('change', draw); draw();
-    const close = () => { bg.remove(); document.removeEventListener('keydown', esc); };
+    // 사진: 끌어다 놓기 · 고르기 · 붙여넣기 → 처리 → 바로 올림
+    const drop = bg.querySelector('.fhkw-drop'), th = drop.querySelector('.th'), fileIn = bg.querySelector('.fhkw-ph input[type=file]'), phMsg = bg.querySelector('.fhkw-ph-msg');
+    const say = (t, ok) => { phMsg.textContent = t; phMsg.classList.toggle('ok', !!ok); };
+    async function takePhoto(blob) {
+      if (!blob || busy) return;
+      if (!/^image\//.test(blob.type || '')) { say('그림 파일만 넣을 수 있어요'); return; }
+      busy = true; drop.classList.add('busy'); lastSrc = blob; say('');
+      try {
+        const r = await processImage(blob, f.elements.rmbg.checked);
+        if (pending) URL.revokeObjectURL(pending);
+        pending = URL.createObjectURL(r.blob);
+        th.innerHTML = `<img src="${pending}" alt="">`; draw();
+        say('올리는 중…');
+        const url = await uploadImage(r.blob, model);
+        f.elements.image.value = url; draw();
+        say(`올렸어요 ✓ ${Math.round(r.blob.size / 1024)}KB${r.removed ? ' · 흰 배경 지움' : r.light ? '' : ' · 배경 있는 사진이라 그대로'}${r.small ? ' · 원본이 작아서 조금 흐릴 수 있어요' : ''}`, true);
+      } catch (err) { say((err && err.message) || '사진을 처리하지 못했어요'); }
+      finally { busy = false; drop.classList.remove('busy'); }
+    }
+    drop.addEventListener('click', () => fileIn.click());
+    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+    fileIn.addEventListener('change', () => { const fl = fileIn.files && fileIn.files[0]; if (fl) takePhoto(fl); fileIn.value = ''; });
+    ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', (e) => { const fl = [...(e.dataTransfer && e.dataTransfer.files || [])].find((x) => /^image\//.test(x.type)); if (fl) takePhoto(fl); else say('그림 파일을 놓아 주세요'); });
+    const onPaste = (e) => {
+      const it = [...((e.clipboardData && e.clipboardData.items) || [])].find((x) => x.kind === 'file' && /^image\//.test(x.type));
+      if (!it) return;   // 글자 붙여넣기는 그대로
+      e.preventDefault(); takePhoto(it.getAsFile());
+    };
+    document.addEventListener('paste', onPaste);
+    f.elements.rmbg.addEventListener('change', () => { if (lastSrc) takePhoto(lastSrc); });
+    bg.querySelector('[data-a="rmimg"]').addEventListener('click', () => { f.elements.image.value = ''; if (pending) URL.revokeObjectURL(pending); pending = ''; lastSrc = null; th.innerHTML = '<span>사진 없음</span>'; say(''); draw(); });
+    const close = () => { bg.remove(); document.removeEventListener('keydown', esc); document.removeEventListener('paste', onPaste); if (pending) URL.revokeObjectURL(pending); };
     const esc = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', esc);
     bg.addEventListener('click', async (e) => {
       if (e.target === bg || e.target.closest('.fhkw-x') || e.target.closest('[data-a="close"]')) { close(); return; }
       if (!e.target.closest('[data-a="save"]')) return;
+      if (busy) { bg.querySelector('.msg').textContent = '사진을 올리는 중이에요. 잠시 뒤 다시 눌러 주세요.'; return; }
       const w = val(), st = S();
       st.webMeta = st.webMeta || {};
       if (Object.keys(w).length) st.webMeta[model] = w; else delete st.webMeta[model];
