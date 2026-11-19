@@ -42,15 +42,15 @@
   /* 렌탈 홈페이지 카드와 같은 모양 (예전 FILM HK RENTAL 카드: 정사각형 · 남색 이름 · SET 빨강/단품 남색 · 줄 그은 정가 · 검은 가격 띠) */
   .fhkw-card{container-type:inline-size;width:100%;max-width:320px;aspect-ratio:1/1;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;background:#F2F2F2;overflow:hidden;font-family:'Archivo','Noto Sans KR',sans-serif}
   .fhkw-card .t{display:flex;justify-content:space-between;align-items:center;gap:3cqw;padding:4.5cqw 4cqw 0}
-  .fhkw-card .n{font-weight:800;font-size:6.2cqw;line-height:1.15;letter-spacing:-.02em;color:#1D3A8F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fhkw-card .n{font-weight:800;font-size:6.2cqw;line-height:1.15;letter-spacing:-.02em;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .fhkw-card .bd{display:flex;align-items:center;gap:1.5cqw}
-  .fhkw-card .rb{font-weight:900;font-size:5cqw;line-height:1;letter-spacing:.04em;color:#fff;background:#1D3A8F;padding:1.6cqw 3.6cqw;min-width:22cqw;text-align:center}
-  .fhkw-card .rb.set,.fhkw-card .rb.tag{background:#E0362B}
+  .fhkw-card .rb{font-weight:900;font-size:5cqw;line-height:1;letter-spacing:.04em;color:#fff;background:#111;padding:1.6cqw 3.6cqw;min-width:22cqw;text-align:center}
+  .fhkw-card .rb.set,.fhkw-card .rb.tag{background:#FF4A12}
   .fhkw-card .rb.tag{letter-spacing:0;min-width:0}
   .fhkw-card .pic{min-height:0;margin:1cqw 3cqw 0;display:grid;place-items:center;position:relative;overflow:hidden}
   .fhkw-card .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
   .fhkw-card .pic svg{width:62%;height:62%}
-  .fhkw-card .was{height:8.4cqw;padding:0 4cqw;display:flex;align-items:center;font-weight:800;font-size:6.4cqw;color:#1D3A8F}
+  .fhkw-card .was{height:8.4cqw;padding:0 4cqw;display:flex;align-items:center;font-weight:800;font-size:6.4cqw;color:#8A8A8A}
   .fhkw-card .was s{text-decoration:none;position:relative;padding:0 1cqw}
   .fhkw-card .was s::after{content:"";position:absolute;left:-1cqw;right:-1cqw;top:52%;height:.9cqw;min-height:2px;background:#FF4A12}
   .fhkw-card .was em{display:none}
