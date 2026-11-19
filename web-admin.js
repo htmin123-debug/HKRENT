@@ -1,4 +1,4 @@
-/* FILM HK RENTAL 관리자 — 홈페이지 카드 편집 (v328: 사진 넣기)
+/* FILM HK RENTAL 관리자 — 홈페이지 카드 편집 (v329: 사진 넣기 · 자르기)
    장비 모델 화면의 '홈페이지 카드' 버튼을 누를 때만 불러오는 파일이에요 (평소 관리자 화면 속도에 영향 없음).
    저장 위치: state.webMeta[모델 이름] = { hidden, featured, list, tags, title, parts, info, image }
    저장하면 공개 장비 목록(public_catalog)에 'web' 으로 실려 렌탈 홈페이지가 읽어요. 사진은 주소만 저장. */
@@ -117,16 +117,20 @@
      · 결과는 1200×900(4:3) 투명 바탕, 장비가 가운데 84% 안에 들어가게 · WebP(안 되면 PNG) */
   const BUCKET = 'rent-gear', OUT_W = 1200, OUT_H = 900, FILL = 0.84;
   const loadImg = (blob) => new Promise((res, rej) => { const u = URL.createObjectURL(blob); const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('그림 파일이 아니에요')); im.src = u; });
+  const loadUrl = (url) => new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => rej(new Error('올려 둔 사진을 불러오지 못했어요. 원본 파일을 다시 넣어 주세요.')); im.src = url + (url.includes('?') ? '&' : '?') + 'edit=' + Date.now(); });
   const toBlob = (cv, type, q) => new Promise((res) => cv.toBlob(res, type, q));
-  async function processImage(blob, removeBg) {
-    const im = await loadImg(blob);
+  /* 사진 한 장 그리기: 자르기(crop, 0~1) → 흰 배경 지우기 → 빈 공간 잘라내기 → 출력 칸(4:3) 가운데에 fill 비율로 */
+  function renderPhoto(im, o) {
+    o = o || {};
+    const outW = o.outW || OUT_W, outH = o.outH || OUT_H, c = o.crop || { x: 0, y: 0, w: 1, h: 1 };
     const W0 = im.naturalWidth, H0 = im.naturalHeight;
     if (!W0 || !H0) throw new Error('그림 크기를 읽지 못했어요');
-    const k = Math.min(1, 2400 / Math.max(W0, H0)), W = Math.max(1, Math.round(W0 * k)), H = Math.max(1, Math.round(H0 * k));
+    const sx = c.x * W0, sy = c.y * H0, sw = Math.max(1, c.w * W0), sh = Math.max(1, c.h * H0);
+    const k = Math.min(1, (o.maxSide || 2400) / Math.max(sw, sh)), W = Math.max(1, Math.round(sw * k)), H = Math.max(1, Math.round(sh * k));
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, W, H);
+    const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(im, sx, sy, sw, sh, 0, 0, W, H);
     const d = x.getImageData(0, 0, W, H), p = d.data;
-    // 배경색 = 테두리 픽셀 평균, 테두리가 고르고 밝으면 '흰 배경'으로 봄
+    // 배경색 = 테두리 픽셀 평균, 테두리가 고르고 밝으면 '흰 배경'
     const border = []; const step = Math.max(1, Math.floor(Math.min(W, H) / 200));
     for (let i = 0; i < W; i += step) border.push(i, (H - 1) * W + i);
     for (let j = 0; j < H; j += step) border.push(j * W, j * W + W - 1);
@@ -138,8 +142,8 @@
     const alreadyClear = opaque / border.length < 0.5;
     const light = Math.min(r, g, b) >= 220 && Math.max(r, g, b) - Math.min(r, g, b) <= 22 && near >= 0.85;
     let removed = false;
-    if (removeBg && light && !alreadyClear) {
-      // 테두리에서 시작해 배경색과 비슷한 픽셀만 따라 들어가며 지움 (가장자리는 부드럽게)
+    if (o.removeBg !== false && light && !alreadyClear) {
+      // 테두리에서 이어진 배경색 픽셀만 따라 들어가며 지움 (흰색 장비 자체는 그대로, 가장자리는 부드럽게)
       const T0 = 10, T1 = 42, seen = new Uint8Array(W * H), q = new Int32Array(W * H); let head = 0, tail = 0;
       const push = (i) => { if (!seen[i] && dist(i) <= T1) { seen[i] = 1; q[tail++] = i; } };
       for (let i = 0; i < W; i++) { push(i); push((H - 1) * W + i); }
@@ -147,27 +151,157 @@
       while (head < tail) {
         const i = q[head++], dd = dist(i), a = dd <= T0 ? 0 : Math.round(255 * (dd - T0) / (T1 - T0));
         if (a < p[i * 4 + 3]) p[i * 4 + 3] = a;
-        if (dd > T0 + 6) continue;   // 경계에서는 더 들어가지 않음
+        if (dd > T0 + 6) continue;
         const xx = i % W;
         if (xx > 0) push(i - 1); if (xx < W - 1) push(i + 1); if (i >= W) push(i - W); if (i < W * (H - 1)) push(i + W);
       }
       x.putImageData(d, 0, 0); removed = true;
     }
-    // 장비가 있는 영역만 남기기
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
     const keep = (i) => removed || alreadyClear ? p[i * 4 + 3] > 18 : (light ? dist(i) > 24 : true);
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (keep(j * W + i)) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
     if (x1 < 0) { x0 = 0; y0 = 0; x1 = W - 1; y1 = H - 1; }
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-    const fill = removed || alreadyClear || light ? FILL : 1;
-    const sc = Math.min(OUT_W * fill / bw, OUT_H * fill / bh);
-    const out = document.createElement('canvas'); out.width = OUT_W; out.height = OUT_H;
-    const o = out.getContext('2d'); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'high';
-    if (!removed && light && !alreadyClear) { o.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`; o.fillRect(0, 0, OUT_W, OUT_H); }
-    o.drawImage(cv, x0, y0, bw, bh, (OUT_W - bw * sc) / 2, (OUT_H - bh * sc) / 2, bw * sc, bh * sc);
-    let outBlob = await toBlob(out, 'image/webp', 0.86);
-    if (!outBlob || outBlob.type !== 'image/webp') outBlob = await toBlob(out, 'image/png');
-    return { blob: outBlob, removed, light, small: sc / k > 2.2, src: [W0, H0] };
+    const fill = o.fill || (removed || alreadyClear || light ? FILL : 1);
+    const sc = Math.min(outW * fill / bw, outH * fill / bh);
+    const out = document.createElement('canvas'); out.width = outW; out.height = outH;
+    const oc = out.getContext('2d'); oc.imageSmoothingEnabled = true; oc.imageSmoothingQuality = 'high';
+    if (!removed && light && !alreadyClear) { oc.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`; oc.fillRect(0, 0, outW, outH); }
+    oc.drawImage(cv, x0, y0, bw, bh, (outW - bw * sc) / 2, (outH - bh * sc) / 2, bw * sc, bh * sc);
+    return { canvas: out, removed, light, small: (sc / k) * (OUT_W / outW) > 2.2 };
+  }
+  async function processImage(im, o) {
+    const r = renderPhoto(im, o);
+    let blob = await toBlob(r.canvas, 'image/webp', 0.86);
+    if (!blob || blob.type !== 'image/webp') blob = await toBlob(r.canvas, 'image/png');
+    return Object.assign(r, { blob });
+  }
+
+  /* ---------- 사진 다듬기 창 (파워포인트 자르기처럼) ----------
+     원본 위 상자: 안쪽을 끌면 이동, 모서리 · 변 손잡이를 끌면 크기 · 오른쪽에 카드 미리보기 · 장비 크기 · 흰 배경 지우기 */
+  const CROP_CSS = `
+  .fhkc-bg{position:fixed;inset:0;z-index:2147483001;background:rgba(8,8,10,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+  .fhkc{width:min(980px,100%);max-height:100%;overflow:auto;background:#fff;color:#111;border-radius:8px;font:14px/1.5 'Noto Sans KR',system-ui,sans-serif;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+  .fhkc *{box-sizing:border-box}
+  .fhkc-hd{display:flex;align-items:baseline;gap:10px;padding:14px 18px;border-bottom:1px solid #e5e5e5}
+  .fhkc-hd b{font-size:16px}.fhkc-hd small{color:#888}
+  .fhkc-body{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;padding:18px}
+  @media(max-width:760px){.fhkc-body{grid-template-columns:1fr}}
+  .fhkc-wrap{justify-self:center;align-self:start;padding:14px;overflow:hidden;background:#1d1d1f;border-radius:4px}
+  .fhkc-stage{position:relative;overflow:visible;background:#F3F2F0 conic-gradient(#e7e7e7 25%,#f6f6f6 0 50%,#e7e7e7 0 75%,#f6f6f6 0) 0 0/16px 16px;touch-action:none;user-select:none;-webkit-user-select:none}
+  .fhkc-stage img{display:block;width:100%;height:100%;pointer-events:none}
+  .fhkc-box{position:absolute;box-shadow:0 0 0 9999px rgba(0,0,0,.5);outline:1.5px solid #fff;cursor:move}
+  .fhkc-box::before,.fhkc-box::after{content:"";position:absolute;inset:0;pointer-events:none;border:0 solid rgba(255,255,255,.45)}
+  .fhkc-box::before{left:33.33%;right:33.33%;border-left-width:1px;border-right-width:1px}
+  .fhkc-box::after{top:33.33%;bottom:33.33%;border-top-width:1px;border-bottom-width:1px}
+  .fhkc-box i{position:absolute;width:16px;height:16px;background:#fff;border:1.5px solid #111;border-radius:2px;transform:translate(-50%,-50%)}
+  .fhkc-box i[data-h=nw]{left:0;top:0;cursor:nwse-resize}.fhkc-box i[data-h=n]{left:50%;top:0;cursor:ns-resize}.fhkc-box i[data-h=ne]{left:100%;top:0;cursor:nesw-resize}
+  .fhkc-box i[data-h=e]{left:100%;top:50%;cursor:ew-resize}.fhkc-box i[data-h=se]{left:100%;top:100%;cursor:nwse-resize}.fhkc-box i[data-h=s]{left:50%;top:100%;cursor:ns-resize}
+  .fhkc-box i[data-h=sw]{left:0;top:100%;cursor:nesw-resize}.fhkc-box i[data-h=w]{left:0;top:50%;cursor:ew-resize}
+  .fhkc-side{display:flex;flex-direction:column;gap:12px}
+  .fhkc-side small{color:#888;font-size:12px;letter-spacing:.04em}
+  .fhkc-pv{width:100%;aspect-ratio:4/3;background:#F3F2F0;border-top:1px solid #111}
+  .fhkc-pv canvas{width:100%;height:100%;display:block}
+  .fhkc-side label{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px}
+  .fhkc-side input[type=range]{flex:1;accent-color:#FF4A12}
+  .fhkc-side input[type=checkbox]{width:17px;height:17px;accent-color:#FF4A12}
+  .fhkc-side output{min-width:3em;text-align:right;font-variant-numeric:tabular-nums}
+  .fhkc-tip{margin:0;font-size:12px;color:#888;line-height:1.6}
+  .fhkc-ft{display:flex;gap:8px;align-items:center;padding:14px 18px;border-top:1px solid #e5e5e5}
+  .fhkc-ft .sp{margin-right:auto}
+  .fhkc-ft button{border:1px solid #111;background:#111;color:#fff;border-radius:4px;padding:10px 18px;font:700 14px 'Noto Sans KR',sans-serif;cursor:pointer}
+  .fhkc-ft button.ghost{background:#fff;color:#111}
+  .fhkc-ft button.link{border:0;background:none;color:#888;text-decoration:underline;padding:10px 0}
+  `;
+  function cropper(im, init) {
+    if (!document.getElementById('fhkc-css')) { const st = document.createElement('style'); st.id = 'fhkc-css'; st.textContent = CROP_CSS; document.head.appendChild(st); }
+    return new Promise((resolve) => {
+      const FULL = { x: 0, y: 0, w: 1, h: 1 };
+      const state = { crop: Object.assign({}, init.crop || FULL), fill: init.fill || FILL, removeBg: init.removeBg !== false };
+      const bg = document.createElement('div'); bg.className = 'fhkc-bg';
+      bg.innerHTML = `<div class="fhkc" role="dialog" aria-modal="true" aria-label="사진 다듬기">
+        <div class="fhkc-hd"><b>사진 다듬기</b><small>상자를 끌어 옮기고, 모서리 · 변을 끌어 자르기</small></div>
+        <div class="fhkc-body">
+          <div class="fhkc-wrap"><div class="fhkc-stage"><img alt=""><div class="fhkc-box" tabindex="0" aria-label="자르기 상자 (화살표로 이동)"><i data-h="nw"></i><i data-h="n"></i><i data-h="ne"></i><i data-h="e"></i><i data-h="se"></i><i data-h="s"></i><i data-h="sw"></i><i data-h="w"></i></div></div></div>
+          <div class="fhkc-side">
+            <small>홈페이지 카드 미리보기</small>
+            <div class="fhkc-pv"><canvas width="480" height="360"></canvas></div>
+            <label>장비 크기<input type="range" min="40" max="100" step="1" name="fill"><output></output></label>
+            <label><input type="checkbox" name="rm">흰 배경 지우기</label>
+            <p class="fhkc-tip">가격 글자 같은 건 상자 밖으로 빼고 자르세요. 장비 주변 빈 공간은 알아서 잘라내고, 장비 크기는 위 막대로 정해요.</p>
+          </div>
+        </div>
+        <div class="fhkc-ft"><button type="button" class="link sp" data-c="reset">처음대로</button><button type="button" class="ghost" data-c="cancel">취소</button><button type="button" data-c="ok">이대로 올리기</button></div>
+      </div>`;
+      document.body.appendChild(bg);
+      const stage = bg.querySelector('.fhkc-stage'), img = stage.querySelector('img'), box = stage.querySelector('.fhkc-box');
+      const pvc = bg.querySelector('.fhkc-pv canvas'), pv = pvc.getContext('2d');
+      const fillIn = bg.querySelector('[name=fill]'), fillOut = bg.querySelector('.fhkc-side output'), rm = bg.querySelector('[name=rm]');
+      img.src = im.src;
+      // 미리보기는 작은 사본으로 (끌 때 빠르게)
+      const small = document.createElement('canvas'); { const k = Math.min(1, 900 / Math.max(im.naturalWidth, im.naturalHeight)); small.width = Math.max(1, Math.round(im.naturalWidth * k)); small.height = Math.max(1, Math.round(im.naturalHeight * k)); small.getContext('2d').drawImage(im, 0, 0, small.width, small.height); }
+      const smallIm = { naturalWidth: small.width, naturalHeight: small.height };
+      let dw = 1, dh = 1;
+      function layout() {
+        const host = stage.parentElement.parentElement, maxW = Math.min(560, (host.clientWidth || 588) - 28), maxH = Math.min(440, window.innerHeight - 280);
+        const s = Math.min(maxW / im.naturalWidth, Math.max(160, maxH) / im.naturalHeight);
+        dw = Math.round(im.naturalWidth * s); dh = Math.round(im.naturalHeight * s);
+        stage.style.width = dw + 'px'; stage.style.height = dh + 'px'; paintBox();
+      }
+      function paintBox() { const c = state.crop; Object.assign(box.style, { left: c.x * dw + 'px', top: c.y * dh + 'px', width: c.w * dw + 'px', height: c.h * dh + 'px' }); }
+      let raf = 0;
+      function paintPreview() {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          try {
+            const r = renderPhoto(Object.assign(small, smallIm), { crop: state.crop, fill: state.fill, removeBg: state.removeBg, maxSide: 900, outW: 480, outH: 360 });
+            pv.clearRect(0, 0, 480, 360); pv.drawImage(r.canvas, 0, 0);
+          } catch (_) {}
+        });
+      }
+      function sync() { fillIn.value = Math.round(state.fill * 100); fillOut.textContent = fillIn.value + '%'; rm.checked = state.removeBg; paintBox(); paintPreview(); }
+      // 끌기: 상자 안 = 이동, 손잡이 = 크기
+      const MIN = 0.04; let drag = null;
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      box.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); box.setPointerCapture(e.pointerId);
+        drag = { h: (e.target.dataset && e.target.dataset.h) || 'move', x: e.clientX, y: e.clientY, c: Object.assign({}, state.crop) };
+      });
+      box.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const dx = (e.clientX - drag.x) / dw, dy = (e.clientY - drag.y) / dh, c0 = drag.c, h = drag.h;
+        let { x, y, w, h: hh } = c0;
+        if (h === 'move') { x = clamp(c0.x + dx, 0, 1 - c0.w); y = clamp(c0.y + dy, 0, 1 - c0.h); }
+        else {
+          if (h.includes('w')) { const nx = clamp(c0.x + dx, 0, c0.x + c0.w - MIN); w = c0.w + (c0.x - nx); x = nx; }
+          if (h.includes('e')) { w = clamp(c0.w + dx, MIN, 1 - c0.x); }
+          if (h.includes('n')) { const ny = clamp(c0.y + dy, 0, c0.y + c0.h - MIN); hh = c0.h + (c0.y - ny); y = ny; }
+          if (h.includes('s')) { hh = clamp(c0.h + dy, MIN, 1 - c0.y); }
+        }
+        state.crop = { x, y, w, h: hh }; paintBox(); paintPreview();
+      });
+      const end = () => { drag = null; };
+      box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+      box.addEventListener('keydown', (e) => {
+        const m = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]; if (!m) return;
+        e.preventDefault(); const c = state.crop, st = e.shiftKey ? 0.05 : 0.01;
+        state.crop = { x: clamp(c.x + m[0] * st, 0, 1 - c.w), y: clamp(c.y + m[1] * st, 0, 1 - c.h), w: c.w, h: c.h }; paintBox(); paintPreview();
+      });
+      fillIn.addEventListener('input', () => { state.fill = +fillIn.value / 100; fillOut.textContent = fillIn.value + '%'; paintPreview(); });
+      rm.addEventListener('change', () => { state.removeBg = rm.checked; paintPreview(); });
+      const finish = (v) => { window.removeEventListener('resize', layout); document.removeEventListener('keydown', onKey, true); bg.remove(); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish(null); } };
+      document.addEventListener('keydown', onKey, true);
+      bg.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-c]'); if (!b) return;
+        if (b.dataset.c === 'cancel') finish(null);
+        else if (b.dataset.c === 'reset') { state.crop = Object.assign({}, FULL); state.fill = FILL; state.removeBg = true; sync(); }
+        else if (b.dataset.c === 'ok') finish({ crop: state.crop, fill: state.fill, removeBg: state.removeBg });
+      });
+      window.addEventListener('resize', layout);
+      const go = () => { layout(); sync(); setTimeout(() => box.focus(), 30); };
+      if (img.complete) go(); else img.onload = go;
+    });
   }
   async function uploadImage(blob, model) {
     const c = window.filmhkSupabase;
@@ -202,7 +336,7 @@
               <div class="th">${w0.image ? `<img src="${H(w0.image)}" alt="">` : '<span>사진 없음</span>'}</div>
               <p><b>끌어다 놓기 · 붙여넣기(Ctrl+V / ⌘V)</b><br>또는 눌러서 고르기 · 흰 배경은 지우고, 장비 크기를 다른 사진과 같게 맞춰요</p>
             </div>
-            <div class="fhkw-ph-opt"><label><input type="checkbox" name="rmbg" checked>흰 배경 지우기</label><button type="button" data-a="rmimg">사진 빼기</button><span class="fhkw-ph-msg" role="status"></span></div>
+            <div class="fhkw-ph-opt"><button type="button" data-a="recrop">자르기 · 크기 다시 다듬기</button><button type="button" data-a="rmimg">사진 빼기</button><span class="fhkw-ph-msg" role="status"></span></div>
             <details><summary>사진 주소 직접 넣기</summary><input name="image" value="${H(w0.image || '')}" placeholder="https://…"></details>
             <input type="file" accept="image/*" hidden>
           </div>
@@ -230,12 +364,22 @@
     // 사진: 끌어다 놓기 · 고르기 · 붙여넣기 → 처리 → 바로 올림
     const drop = bg.querySelector('.fhkw-drop'), th = drop.querySelector('.th'), fileIn = bg.querySelector('.fhkw-ph input[type=file]'), phMsg = bg.querySelector('.fhkw-ph-msg');
     const say = (t, ok) => { phMsg.textContent = t; phMsg.classList.toggle('ok', !!ok); };
+    let lastEdit = null;   // 마지막으로 다듬은 원본과 설정 (다시 다듬기용)
     async function takePhoto(blob) {
       if (!blob || busy) return;
       if (!/^image\//.test(blob.type || '')) { say('그림 파일만 넣을 수 있어요'); return; }
-      busy = true; drop.classList.add('busy'); lastSrc = blob; say('');
+      let im; try { im = await loadImg(blob); } catch (err) { say(err.message); return; }
+      editPhoto(im, {});
+    }
+    async function editPhoto(im, init) {
+      if (busy) return;
+      busy = true; say('');
+      const choice = await cropper(im, init);
+      if (!choice) { busy = false; return; }
+      lastEdit = { im, choice }; lastSrc = im;
+      drop.classList.add('busy');
       try {
-        const r = await processImage(blob, f.elements.rmbg.checked);
+        const r = await processImage(im, choice);
         if (pending) URL.revokeObjectURL(pending);
         pending = URL.createObjectURL(r.blob);
         th.innerHTML = `<img src="${pending}" alt="">`; draw();
@@ -258,8 +402,12 @@
       e.preventDefault(); takePhoto(it.getAsFile());
     };
     document.addEventListener('paste', onPaste);
-    f.elements.rmbg.addEventListener('change', () => { if (lastSrc) takePhoto(lastSrc); });
-    bg.querySelector('[data-a="rmimg"]').addEventListener('click', () => { f.elements.image.value = ''; if (pending) URL.revokeObjectURL(pending); pending = ''; lastSrc = null; th.innerHTML = '<span>사진 없음</span>'; say(''); draw(); });
+    bg.querySelector('[data-a="recrop"]').addEventListener('click', async () => {
+      if (lastEdit) { editPhoto(lastEdit.im, lastEdit.choice); return; }
+      const url = N(f.elements.image.value); if (!url) { say('먼저 사진을 넣어 주세요'); return; }
+      try { say('사진을 불러오는 중…'); const im = await loadUrl(url); say(''); editPhoto(im, {}); } catch (err) { say(err.message); }
+    });
+    bg.querySelector('[data-a="rmimg"]').addEventListener('click', () => { f.elements.image.value = ''; if (pending) URL.revokeObjectURL(pending); pending = ''; lastSrc = null; lastEdit = null; th.innerHTML = '<span>사진 없음</span>'; say(''); draw(); });
     const close = () => { bg.remove(); document.removeEventListener('keydown', esc); document.removeEventListener('paste', onPaste); if (pending) URL.revokeObjectURL(pending); };
     const esc = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', esc);
