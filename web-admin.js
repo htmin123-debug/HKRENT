@@ -13,6 +13,8 @@
   const SET_RE = /세트|\bSET\b|패키지|\bKIT\b|KIT$/i;
 
   const CSS = `
+  .fhkw-opts{margin-top:10px;padding-top:8px;border-top:1px solid #E6E6E6;display:grid;gap:3px;font-size:12px}
+  .fhkw-opts b{font-size:12px}
   .fhkw-bg{position:fixed;inset:0;z-index:2147483000;background:rgba(10,12,16,.6);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}
   .fhkw{width:min(980px,100%);background:#fff;color:#111;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.35);font:14px/1.5 'Noto Sans KR',system-ui,sans-serif}
   .fhkw *{box-sizing:border-box}
@@ -102,6 +104,10 @@
     if (/조명/.test(cat)) return `<svg viewBox="0 0 300 150" fill="none" stroke="#111" stroke-width="1.4"><rect x="96" y="28" width="108" height="72" rx="3"/><line x1="130" y1="36" x2="130" y2="92" stroke="${OR}" stroke-width="2"/><line x1="150" y1="100" x2="150" y2="132"/></svg>`;
     return `<svg viewBox="0 0 300 150" fill="none" stroke="#111" stroke-width="1.4"><rect x="90" y="40" width="120" height="80" rx="4"/><circle cx="150" cy="80" r="22" stroke="${OR}" stroke-width="2"/></svg>`;
   }
+  // 추가 옵션: [{ name, price, max }]  ←→  "이름 | 가격 | 최대" 줄
+  const optText = (a) => (Array.isArray(a) ? a : []).map((o) => `${o.name} | ${o.price || 0} | ${o.max || 1}`).join('\n');
+  const parseOpts = (t) => String(t || '').split('\n').map((l) => l.split('|').map(N)).filter((c) => c[0])
+    .map((c) => ({ name: c[0].slice(0, 40), price: Math.max(0, num(c[1]) || 0), max: Math.max(1, Math.min(10, num(c[2]) || 1)) }));
   function preview(model, info, w) {
     const off = w.list > info.price ? Math.round((1 - info.price / w.list) * 100) : 0;
     const parts = (w.parts && w.parts.length) ? w.parts : info.slots.map((s) => s.name + (s.qty > 1 ? ' × ' + s.qty : ''));
@@ -111,7 +117,7 @@
         <div class="was">${off ? `<s>₩ ${won(w.list)}</s><em>−${off}%</em>` : ''}</div>
         <div class="now"><i>₩</i><b>${won(info.price)}</b><i>24h</i></div>
       </div>
-      <div class="fhkw-dt${w.hidden ? ' fhkw-off' : ''}"><h4>${H(w.title || model)}</h4>${parts.length ? `<ul>${parts.map((p) => `<li>${H(p)}</li>`).join('')}</ul>` : ''}${w.info ? `<p>${H(w.info)}</p>` : ''}</div>`;
+      <div class="fhkw-dt${w.hidden ? ' fhkw-off' : ''}"><h4>${H(w.title || model)}</h4>${parts.length ? `<ul>${parts.map((p) => `<li>${H(p)}</li>`).join('')}</ul>` : ''}${w.info ? `<p>${H(w.info)}</p>` : ''}${(w.options || []).length ? `<div class="fhkw-opts"><b>추가 옵션</b>${w.options.map((o) => `<span>${H(o.name)} · 하루 +${won(o.price)}원 · 최대 ${o.max}개</span>`).join('')}</div>` : ''}</div>`;
   }
 
   /* ---------- 사진: 흰 배경 지우기 · 빈 공간 잘라내기 · 같은 여백에 맞추기 · 줄이기 → Supabase 사진 보관함 ----------
@@ -333,6 +339,8 @@
           <label class="w">상세 제목<input name="title" value="${H(w0.title || '')}" placeholder="${H(model)}"></label>
           <label class="w">구성 (한 줄에 하나)<textarea name="parts" placeholder="${info.slots.length ? '비우면 세트 구성을 그대로 보여줘요' : '예: 앞뒤 캡 · 후드'}">${H((w0.parts || []).join('\n'))}</textarea></label>
           <label class="w">제품 안내<textarea name="info" placeholder="홈페이지 상세 페이지에 보일 설명">${H(w0.info || '')}</textarea></label>
+          <label class="w">추가 옵션 (한 줄에 하나 · 이름 | 하루 가격 | 최대 개수)<textarea name="options" placeholder="예: RX 수신기 추가 | 10000 | 2">${H(optText(w0.options))}</textarea>
+            <span class="hint">비우면 '추가 없음'. 손님은 케이스 · 상세 페이지에서 '추가 없음 / 1개 / 2개'처럼 골라요. 가격은 하루 기준이고 연속회차 · 학생 할인이 같이 적용돼요.</span></label>
           <div class="w fhkw-ph"><span class="lb">사진</span>
             <div class="fhkw-drop" tabindex="0" role="button" aria-label="사진 넣기: 끌어다 놓기, 눌러서 고르기, 붙여넣기">
               <div class="th">${w0.image ? `<img src="${H(w0.image)}" alt="">` : '<span>사진 없음</span>'}</div>
@@ -358,6 +366,7 @@
       const tags = g('tags').value.split(',').map(N).filter(Boolean); if (tags.length) w.tags = tags;
       ['title', 'info', 'image'].forEach((k) => { const v = N(g(k).value); if (v) w[k] = v; });   // 사진은 올리기가 끝난 주소만 저장
       const parts = g('parts').value.split('\n').map(N).filter(Boolean); if (parts.length) w.parts = parts;
+      const options = parseOpts(g('options').value); if (options.length) w.options = options;
       return w;
     };
     let pending = '', lastSrc = null, busy = false;
