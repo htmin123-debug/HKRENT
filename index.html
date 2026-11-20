@@ -22770,7 +22770,7 @@ button:active,.btn:active,.tab-btn:active,.side-btn:active{filter:brightness(.82
     if(!$('ui2More')){
       document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg ui2-sheet" id="ui2More"><div class="modal"><div class="modal-header"><h3>더보기</h3><button class="close" type="button" onclick="closeModal('ui2More')">×</button></div><div class="modal-body" id="ui2MoreBody"></div></div></div>`);
     }
-    const items=[['고객 · 거래처',()=>tabBtn('customers')&&tabBtn('customers').click()],['견적서',()=>tabBtn('quotes')&&tabBtn('quotes').click()],['할인 · 설정',()=>tabBtn('settings')&&tabBtn('settings').click()],['홈페이지 문구',()=>tabBtn('website')&&tabBtn('website').click()],
+    const items=[['고객 · 거래처',()=>tabBtn('customers')&&tabBtn('customers').click()],['견적서',()=>tabBtn('quotes')&&tabBtn('quotes').click()],['할인 · 설정',()=>tabBtn('settings')&&tabBtn('settings').click()],['홈페이지 관리',()=>tabBtn('website')&&tabBtn('website').click()],
       ['삭제·취소된 예약 복구',()=>window.fhkOpenTrash&&window.fhkOpenTrash()],null,
       ['백업 (파일로 저장)',()=>window.exportData&&exportData()],['복원 (백업 파일 불러오기)',()=>$('importFile')&&$('importFile').click()],['비밀번호 변경',()=>window.changePw&&changePw()],
       ['로그아웃',()=>window.logout&&logout(),'danger']];
@@ -26975,7 +26975,7 @@ header .brand h1{position:absolute!important;width:1px!important;height:1px!impo
     const sec=$('website'); if(!sec) return;
     const x=cur(), h=x.hero||{}, n=x.notice||{}, f=x.facts||[], c=x.contact||{}, dh=DEF.site.hero, df=DEF.site.facts, dc=DEF.contact;
     if(!faq) faq=(Array.isArray(x.faq)&&x.faq.length?x.faq:DEF.faq).map(q=>({q:q.q,a:q.a}));
-    sec.innerHTML=`<div class="panel-header"><h2>홈페이지 문구 <small>렌탈 홈페이지에 보이는 글 · 비운 칸은 연한 글씨(기본 문구)가 그대로 나와요</small></h2>
+    sec.innerHTML=`<div class="panel-header"><h2>홈페이지 관리 <small>렌탈 홈페이지에 보이는 글 · 비운 칸은 연한 글씨(기본 문구)가 그대로 나와요</small></h2>
       <div class="fhk-acts"><span class="fhk-st-msg" id="fhkStMsg" role="status"></span><a class="btn btn-secondary" href="https://filmhk-rent.htmin123.workers.dev/" target="_blank" rel="noopener">홈페이지 열기 ↗</a><button type="button" class="btn btn-primary" data-sta="save">저장하고 홈페이지 반영</button></div></div>
     <div class="fhk-st-grid">
       <div class="card"><h3>📣 공지 띠 <small>모든 페이지 맨 위 한 줄 · 휴무 · 이벤트 안내</small></h3>
@@ -27031,7 +27031,7 @@ header .brand h1{position:absolute!important;width:1px!important;height:1px!impo
     if($('website')) return;
     const main=document.querySelector('main'); const settingsBtn=document.querySelector('.tab-btn[data-panel="settings"]'); if(!main||!settingsBtn) return;
     const sec=document.createElement('section'); sec.id='website'; sec.className='panel'; main.appendChild(sec);
-    const b=document.createElement('button'); b.className='tab-btn'; b.dataset.panel='website'; b.textContent='🌐 홈페이지 문구';
+    const b=document.createElement('button'); b.className='tab-btn'; b.dataset.panel='website'; b.textContent='🌐 홈페이지 관리';
     settingsBtn.after(b);
     b.addEventListener('click',()=>{ try{ (window.showPanel||showPanel)('website'); }catch(_){ document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='website')); document.querySelectorAll('.tab-btn').forEach(x=>x.classList.toggle('active',x===b)); } faq=null; render(); });
     sec.addEventListener('click',e=>{ const a=e.target.closest('[data-sta]'); if(!a) return; const k=a.dataset.sta;
